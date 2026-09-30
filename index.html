@@ -1,0 +1,1372 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#2563eb">
+<title>Sổ chấm công</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{
+  --bg:#f5f6f8; --card:rgba(255,255,255,.84); --solid:#fff; --text:#1c1f24;
+  --bgimg:linear-gradient(160deg,#fdf2f8 0%,#f5f3ff 45%,#eff6ff 100%); --muted:#6b7280; --line:#e5e7eb;
+  --accent:#2563eb; --accent-fg:#fff;
+  --ok:#15803d; --okbg:#dcfce7; --warn:#b45309; --warnbg:#fef3c7;
+  --bad:#b91c1c; --badbg:#fee2e2; --prog:#1d4ed8; --progbg:#dbeafe;
+  --onl:#6d28d9; --onlbg:#ede9fe;
+  --off:#9ca3af; --offbg:#f0f1f3;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#0f1115; --card:rgba(24,27,33,.84); --solid:#181b21; --text:#e8eaed;
+    --bgimg:linear-gradient(160deg,#1f1030 0%,#0f1115 50%,#0b1628 100%); --muted:#9aa0a6; --line:#2a2f37;
+    --accent:#60a5fa; --accent-fg:#0b1220;
+    --ok:#4ade80; --okbg:#12301d; --warn:#fbbf24; --warnbg:#3a2c0b;
+    --bad:#f87171; --badbg:#3b1414; --prog:#93c5fd; --progbg:#172a4a;
+    --onl:#c4b5fd; --onlbg:#2a1f4a;
+    --off:#6b7280; --offbg:#1d2127;
+  }
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0}
+body{background-color:var(--bg);background-image:var(--bgimg);background-attachment:fixed;min-height:100vh;color:var(--text);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding:16px 16px calc(24px + env(safe-area-inset-bottom));}
+.wrap{position:relative;z-index:1;max-width:1200px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+
+/* floating hearts & butterflies */
+.fx{position:fixed;inset:0;overflow:hidden;pointer-events:none;z-index:0}
+.fx i{position:absolute;bottom:-50px;font-style:normal;line-height:1;animation:rise linear infinite}
+.fx b{display:inline-block;animation:sway ease-in-out infinite alternate}
+.fx s{display:inline-block;text-decoration:none}
+.fx .bf s{animation:flap .28s ease-in-out infinite alternate}
+@keyframes rise{from{transform:translateY(0)}to{transform:translateY(calc(-100vh - 100px))}}
+@keyframes sway{from{transform:translateX(-22px) rotate(-12deg)}to{transform:translateX(22px) rotate(12deg)}}
+@keyframes flap{from{transform:scaleX(1)}to{transform:scaleX(.4)}}
+@media (prefers-reduced-motion: reduce){ .fx{display:none} }
+
+h1{font-size:18px;margin:0;line-height:1.2}
+.card{background:var(--card);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);border:1px solid var(--line);border-radius:16px;padding:14px;box-shadow:0 4px 18px rgba(0,0,0,.06)}
+.top{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.brand{display:flex;gap:10px;align-items:center;min-width:0}
+.brand>div:last-child{min-width:0}
+.logo{width:40px;height:40px;border-radius:12px;background:var(--accent);color:var(--accent-fg);display:grid;place-items:center;font-size:20px;flex:none}
+.layout{display:grid;gap:14px}
+.layout>*,.side>*{min-width:0}
+.side{display:grid;gap:14px;align-content:start}
+@media (min-width:860px){
+  .layout{grid-template-columns:340px 1fr;align-items:start}
+  .side{position:sticky;top:16px}
+}
+@media (max-width:520px){ .hide-sm{display:none} }
+.muted{color:var(--muted)}
+small{font-size:12.5px}
+button{font:inherit;color:inherit;cursor:pointer}
+button:disabled{opacity:.6;cursor:progress}
+.btn{border:1px solid var(--line);background:var(--card);border-radius:10px;padding:10px 12px}
+.btn.primary{background:var(--accent);color:var(--accent-fg);border-color:var(--accent);font-weight:600}
+.btn.danger{color:var(--bad);border-color:var(--bad)}
+.row{display:flex;gap:10px;align-items:center}
+.grow{flex:1}
+
+/* auth / setup screens */
+.screen{position:relative;z-index:1;min-height:calc(100vh - 40px);display:grid;place-items:center}
+.authcard{width:min(400px,100%);display:grid;gap:14px}
+.authcard .head{display:grid;justify-items:center;gap:8px;text-align:center}
+.authcard .logo{width:56px;height:56px;border-radius:16px;font-size:28px}
+.msg{font-size:13px;min-height:1em}
+.msg.ok{color:var(--ok)} .msg.bad{color:var(--bad)}
+
+/* today */
+.punch{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
+.pbtn{border:1px solid var(--line);background:var(--offbg);border-radius:12px;padding:12px;display:grid;gap:2px;text-align:left}
+.pbtn .plabel{font-size:13px;font-weight:600;opacity:.85}
+.pbtn .ptime{font-size:24px;font-weight:700;line-height:1.2}
+.pbtn .ptime.empty{font-size:15px;font-weight:500;opacity:.7;line-height:1.9}
+.pbtn.primary{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
+.pcol{display:flex;flex-direction:column;gap:8px;min-width:0}
+.pcol .pbtn{width:100%}
+.pthumb{display:block;width:100%;height:130px;object-fit:cover;border-radius:10px;border:1px solid var(--line);cursor:zoom-in;background:var(--offbg)}
+.links{display:flex;gap:14px;margin-top:10px;flex-wrap:wrap}
+.link{background:none;border:0;padding:0;color:var(--accent);font-size:14px}
+
+/* summary */
+.big{font-size:28px;font-weight:700}
+.bar{height:10px;background:var(--offbg);border-radius:6px;overflow:hidden;margin:8px 0}
+.bar i{display:block;height:100%;background:var(--ok);width:0}
+.bar i.mid{background:var(--warn)} .bar i.lost{background:var(--bad)}
+.usage{display:flex;align-items:baseline;gap:6px;margin-top:6px}
+.pill{font-size:12px;font-weight:600;padding:3px 10px;border-radius:999px;white-space:nowrap}
+.pill.ok{background:var(--okbg);color:var(--ok)} .pill.mid{background:var(--warnbg);color:var(--warn)} .pill.lost{background:var(--badbg);color:var(--bad)}
+.cong{display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--progbg);border-radius:12px;padding:10px 12px;margin:4px 0 8px}
+.cong small{display:block;color:var(--prog);font-weight:600}
+.cong b{font-size:22px}
+.stats{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px}
+.stats div{background:var(--offbg);border-radius:10px;padding:6px 4px;text-align:center}
+.stats b{display:block;font-size:16px}
+.stats span{display:block;font-size:11px;line-height:1.2;color:var(--muted)}
+
+/* banner */
+.banner{display:flex;flex-wrap:wrap;gap:10px;align-items:center;background:var(--warnbg);color:var(--text);border:1px solid var(--line);border-radius:14px;padding:10px 14px}
+.banner b{color:var(--warn)}
+
+/* calendar */
+.cal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.cal-head .btn{padding:6px 12px}
+.cal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}
+.wd{text-align:center;font-size:12px;color:var(--muted);padding:2px 0}
+.day{position:relative;border:1px solid transparent;border-radius:10px;background:var(--offbg);min-height:84px;padding:6px 7px;display:flex;flex-direction:column;align-items:stretch;gap:1px;min-width:0;text-align:left}
+.day .n{font-weight:700;font-size:14px;margin-bottom:2px}
+.day .ln{font-size:11.5px;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600}
+.day .ln::before{content:attr(data-l) " ";color:var(--muted);font-weight:500}
+.day .ln.pen{color:var(--warn)}
+.day .ln.pen::before{color:inherit;opacity:.85}
+.day .ln.note{font-weight:500}
+.day .ln.note::before{content:attr(data-l);color:inherit}
+@media (max-width:600px){
+  .day{min-height:74px;padding:4px 3px}
+  .day .n{font-size:13px}
+  .day .ln{font-size:10px}
+  .day .ln::before{content:attr(data-s) " "}
+  .day .ln.note::before{content:attr(data-s)}
+}
+@media (min-width:860px){
+  .cal{gap:6px}
+  .day{min-height:112px;padding:8px 9px}
+  .day .n{font-size:15px}
+  .day .ln{font-size:12.5px}
+}
+.day.today{border-color:var(--accent)}
+.s-ok{background:var(--okbg)} .s-ok .n{color:var(--ok)}
+.s-warn{background:var(--warnbg)} .s-warn .n{color:var(--warn)}
+.s-half,.s-miss{background:var(--badbg)} .s-half .n,.s-miss .n{color:var(--bad)}
+.s-progress{background:var(--progbg)} .s-progress .n{color:var(--prog)}
+.s-online{background:var(--onlbg)} .s-online .n,.s-online .ln{color:var(--onl)}
+.s-off .ln.note{color:var(--off)}
+.s-miss .ln.note{color:var(--bad)}
+.s-off{background:transparent} .s-off .n{color:var(--off)}
+.s-future{background:transparent;border-color:var(--line)}
+.legend{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px;font-size:12px;color:var(--muted)}
+.legend span::before{content:"";display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px;vertical-align:-1px;background:var(--c)}
+
+/* forms */
+.form{display:grid;gap:10px}
+label.f{display:grid;gap:4px;font-size:13px;color:var(--muted)}
+input[type=time],input[type=date],input[type=number],input[type=email],input[type=password],input[type=text],textarea,select{font:inherit;color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px;width:100%}
+.modes{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:6px}
+.modes label{display:grid;grid-template-columns:34px 1fr;align-items:center;gap:6px;font-size:13px}
+.modes select{padding:6px}
+.tools{display:flex;flex-wrap:wrap;gap:8px}
+.account{display:flex;align-items:center;gap:10px;background:var(--offbg);border-radius:12px;padding:10px 12px}
+
+/* dialogs */
+dialog{border:0;padding:0;background:var(--solid);color:var(--text);border-radius:16px;width:min(560px,calc(100% - 24px));max-height:calc(100% - 24px)}
+dialog::backdrop{background:rgba(0,0,0,.45)}
+.sheet{padding:16px;display:grid;gap:12px}
+.sheet h2{margin:0;font-size:18px}
+.seg{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.seg label{text-align:center;padding:10px;cursor:pointer}
+.seg input{display:none}
+.seg label:has(input:checked){background:var(--accent);color:var(--accent-fg);font-weight:600}
+.preview{width:100%;max-height:260px;object-fit:contain;background:var(--offbg);border-radius:10px;cursor:zoom-in}
+.recs{display:grid;gap:8px}
+.rec{display:flex;gap:10px;align-items:center;border:1px solid var(--line);border-radius:10px;padding:8px;background:var(--card);text-align:left;width:100%}
+.rec img,.rec .noimg{width:56px;height:56px;border-radius:8px;object-fit:cover;background:var(--offbg);flex:none;display:grid;place-items:center;font-size:11px;color:var(--muted)}
+.tag{display:inline-block;font-size:11px;padding:1px 6px;border-radius:6px;background:var(--offbg);color:var(--muted)}
+.tag.late{background:var(--warnbg);color:var(--warn)}
+.tag.onl{background:var(--onlbg);color:var(--onl)}
+.tag.okt{background:var(--okbg);color:var(--ok)}
+#photoView{background:#000;width:100%;max-width:100%;height:100%;max-height:100%;border-radius:0}
+#photoView img{width:100%;height:100%;object-fit:contain}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--text);color:var(--bg);padding:10px 16px;border-radius:10px;font-size:14px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:10;max-width:calc(100% - 32px);text-align:center}
+.toast.show{opacity:1}
+</style>
+</head>
+<body>
+<div class="fx" id="fx" aria-hidden="true"></div>
+
+<!-- Chưa cấu hình / không tải được Supabase -->
+<div class="screen" id="setupScreen" hidden>
+  <div class="card authcard">
+    <div class="head"><div class="logo">⏱</div><h1>Sổ chấm công</h1></div>
+    <p id="setupMsg" class="muted" style="margin:0;text-align:center"></p>
+  </div>
+</div>
+
+<!-- Đăng nhập / đăng ký -->
+<div class="screen" id="authScreen" hidden>
+  <div class="card authcard">
+    <div class="head">
+      <div class="logo">⏱</div>
+      <h1>Sổ chấm công</h1>
+      <small class="muted">Đăng nhập để chấm công và lưu ảnh</small>
+    </div>
+    <div class="seg">
+      <label><input type="radio" name="authMode" value="in" checked>Đăng nhập</label>
+      <label><input type="radio" name="authMode" value="up">Đăng ký</label>
+    </div>
+    <form class="form" id="authForm">
+      <label class="f">Email<input type="email" id="aEmail" required autocomplete="email" placeholder="ban@congty.com"></label>
+      <label class="f">Mật khẩu<input type="password" id="aPass" required minlength="6" autocomplete="current-password" placeholder="Tối thiểu 6 ký tự"></label>
+      <label class="f" id="aPass2Row" hidden>Nhập lại mật khẩu<input type="password" id="aPass2" minlength="6" autocomplete="new-password" placeholder="Nhập lại cho chắc"></label>
+      <button class="btn primary" id="aSubmit" type="submit">Đăng nhập</button>
+    </form>
+    <div class="msg" id="aMsg" style="text-align:center"></div>
+    <div class="links" id="authLinks" style="justify-content:center;margin:0">
+      <button type="button" class="link" id="aForgot">Quên mật khẩu?</button>
+      <button type="button" class="link" id="otpSend">Đăng nhập bằng link qua email</button>
+    </div>
+    <div class="links" id="sentLinks" style="justify-content:center;margin:0" hidden>
+      <button type="button" class="link" id="otpShow">Email có mã số? Nhập mã</button>
+    </div>
+    <form class="form" id="otpStep" hidden>
+      <label class="f">Mã số trong email<input type="text" id="otpCode" inputmode="numeric" autocomplete="one-time-code" maxlength="10" placeholder="VD: 123456"></label>
+      <button type="submit" class="btn primary" id="otpVerify">Xác nhận mã</button>
+    </form>
+    <small class="muted" id="fileWarn" style="text-align:center" hidden>⚠ Web đang mở từ file trên máy: đăng nhập bằng mật khẩu dùng bình thường, nhưng link trong email sẽ không quay về đây được.</small>
+  </div>
+</div>
+
+<!-- App -->
+<div class="wrap" id="app" hidden>
+  <header class="top">
+    <div class="brand">
+      <div class="logo">⏱</div>
+      <div><h1 id="hello">Sổ chấm công</h1><small class="muted" id="ruleLine"></small></div>
+    </div>
+    <div class="row">
+      <button class="btn" id="btnExcel" title="Xuất Excel tháng đang xem">⬇<span class="hide-sm"> Xuất Excel</span></button>
+      <button class="btn" id="btnSettings" title="Cài đặt & tài khoản" aria-label="Cài đặt">⚙</button>
+    </div>
+  </header>
+
+  <div class="banner" id="migrateBox" hidden>
+    <span class="grow">Máy này còn <b id="migrateCount">0</b> bản ghi cũ từ trước khi có đăng nhập.</span>
+    <button class="btn primary" id="migrateGo">Đưa lên tài khoản</button>
+    <button class="btn" id="migrateDrop">Xoá khỏi máy</button>
+  </div>
+
+  <main class="layout">
+    <aside class="side">
+      <section class="card">
+        <div class="row"><b id="todayLabel" class="grow"></b><span id="todayBadge"></span></div>
+        <div class="punch">
+          <div class="pcol">
+            <button class="pbtn" id="btnIn"><span class="plabel">📷 Chấm vào</span><span class="ptime" id="tIn">--</span></button>
+            <img class="pthumb" id="imgIn" alt="Ảnh chấm vào" hidden>
+          </div>
+          <div class="pcol">
+            <button class="pbtn" id="btnOut"><span class="plabel">📷 Chấm ra</span><span class="ptime" id="tOut">--</span></button>
+            <img class="pthumb" id="imgOut" alt="Ảnh chấm ra" hidden>
+          </div>
+        </div>
+        <div class="links">
+          <button class="link" id="btnGallery">+ Chọn ảnh có sẵn</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="row"><b class="grow" id="sumTitle">Chuyên cần</b><span class="pill" id="sumStatus"></span></div>
+        <div class="usage"><span class="big" id="sumUsed">0</span><span class="muted">/ <span id="sumLimit">60</span> phút muộn + sớm</span></div>
+        <div class="bar"><i id="bar"></i></div>
+        <div class="cong">
+          <div><small>Tổng công</small><b><span id="congVal">0</span><span class="muted" style="font-size:14px;font-weight:500"> / <span id="congStd">0</span> ngày</span></b></div>
+          <span class="tag" id="congTag"></span>
+        </div>
+        <div class="stats" id="sumStats"></div>
+      </section>
+    </aside>
+
+    <section class="card">
+      <div class="cal-head">
+        <button class="btn" id="prevM" aria-label="Tháng trước">‹</button>
+        <b id="monthLabel"></b>
+        <button class="btn" id="nextM" aria-label="Tháng sau">›</button>
+      </div>
+      <div class="cal" id="cal"></div>
+      <div class="legend">
+        <span style="--c:var(--okbg)">Đủ công</span>
+        <span style="--c:var(--warnbg)">Muộn/sớm</span>
+        <span style="--c:var(--badbg)">Thiếu/không chấm</span>
+        <span style="--c:var(--onlbg)">Online</span>
+        <span style="--c:var(--progbg)">Đang làm</span>
+      </div>
+    </section>
+  </main>
+</div>
+
+<input type="file" id="camIn" accept="image/*" capture="environment" hidden>
+<input type="file" id="galIn" accept="image/*" hidden>
+
+<dialog id="settingsSheet">
+  <div class="sheet">
+    <h2>Cài đặt & tài khoản</h2>
+    <div class="account">
+      <div class="grow" style="min-width:0"><b id="accName"></b><br><small class="muted" id="accEmail" style="word-break:break-all"></small></div>
+      <button class="btn danger" id="btnLogout">Đăng xuất</button>
+    </div>
+    <div class="form">
+      <div class="row">
+        <label class="f grow">Giờ vào quy định<input type="time" id="sStart"></label>
+        <label class="f grow">Giờ ra quy định<input type="time" id="sEnd"></label>
+      </div>
+      <label class="f">Mất chuyên cần khi tổng muộn + sớm trong tháng đạt (phút)<input type="number" id="sLimit" min="1"></label>
+      <div class="f"><span class="muted" style="font-size:13px">Lịch làm việc trong tuần</span><div class="modes" id="sModes"></div></div>
+    </div>
+    <small class="muted">Ngày <b>Online</b> và <b>Nghỉ có công</b> không cần chấm, tự tính 1 công và không tính muộn/sớm. Cài đặt được lưu theo tài khoản.</small>
+    <div class="row"><span class="grow"></span><button class="btn primary" id="sClose">Xong</button></div>
+  </div>
+</dialog>
+
+<dialog id="entrySheet">
+  <form class="sheet" method="dialog" id="entryForm">
+    <h2 id="eTitle">Bản ghi chấm công</h2>
+    <div class="seg">
+      <label><input type="radio" name="eType" value="in">Vào</label>
+      <label><input type="radio" name="eType" value="out">Ra</label>
+    </div>
+    <img class="preview" id="ePreview" alt="Ảnh chấm công" hidden>
+    <div class="row">
+      <label class="f grow">Ngày<input type="date" id="eDate" required></label>
+      <label class="f grow">Giờ<input type="time" id="eTime" required></label>
+    </div>
+    <small class="muted" id="eSource"></small>
+    <label class="f">Ghi chú<textarea id="eNote" rows="2" placeholder="VD: máy lỗi, quên chấm, đi công tác..."></textarea></label>
+    <div class="row">
+      <button type="button" class="btn danger" id="eDelete">Xoá</button>
+      <span class="grow"></span>
+      <button type="button" class="btn" id="eCancel">Huỷ</button>
+      <button type="submit" class="btn primary" id="eSave">Lưu</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="daySheet">
+  <div class="sheet">
+    <h2 id="dTitle"></h2>
+    <div id="dInfo" class="muted"></div>
+    <div class="recs" id="dRecs"></div>
+    <div class="row">
+      <button class="btn" id="dGallery">+ Thêm ảnh</button>
+      <span class="grow"></span>
+      <button class="btn primary" id="dClose">Đóng</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="photoView"><img alt="Ảnh chấm công"></dialog>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ---------- Supabase config ---------- */
+const SUPABASE_URL = 'https://xjegdeyyvkceyjsoexec.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhqZWdkZXl5dmtjZXlqc29leGVjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA3MjM2NTUsImV4cCI6MjEwNjI5OTY1NX0.y-9g8LdDYjR2YhCtyz6YuSyaHBqpTY0Lh37vtJdFkRc';
+const TABLE = 'attendance_records';
+const BUCKET = 'attendance-photos';
+
+/* ---------- helpers ---------- */
+const $ = s => document.querySelector(s);
+const pad = n => String(n).padStart(2, '0');
+const ymd = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const hm = d => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+const toMin = s => { const [h, m] = s.split(':').map(Number); return h * 60 + m; };
+const fmt = m => `${pad(Math.floor(m / 60))}:${pad(m % 60)}`;
+const todayStr = () => ymd(new Date());
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const uuid = () => (window.crypto && crypto.randomUUID) ? crypto.randomUUID()
+  : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 3 | 8)).toString(16); });
+const WD_FULL = ['Chủ nhật', 'Thứ hai', 'Thứ ba', 'Thứ tư', 'Thứ năm', 'Thứ sáu', 'Thứ bảy'];
+const WD_SHORT = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
+const TYPE_LABEL = { in: 'Vào', out: 'Ra' };
+const STATUS_LABEL = { ok: 'Đủ công', warn: 'Muộn/sớm', half: 'Thiếu chấm', miss: 'Không chấm', off: 'Nghỉ', future: '', progress: 'Đang làm', online: 'Online' };
+const MODE_LABEL = { office: 'Văn phòng', online: 'Online', paidoff: 'Nghỉ có công', off: 'Nghỉ không công' };
+const isRestMode = mode => mode === 'off' || mode === 'paidoff';
+const SOURCE_LABEL = { exif: 'Giờ lấy từ thông tin ảnh (lúc chụp)', upload: 'Ảnh không có giờ chụp, đang dùng giờ tải lên. Kiểm tra lại nhé', manual: 'Nhập tay' };
+
+function toast(msg, ms = 2400) {
+  const t = $('#toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), ms);
+}
+
+/* ---------- settings (saved per account in user_metadata) ---------- */
+const DEFAULTS = {
+  v: 2, start: '08:30', end: '17:00', limit: 60,
+  dayModes: { 0: 'paidoff', 1: 'office', 2: 'office', 3: 'office', 4: 'office', 5: 'office', 6: 'online' },
+};
+function buildSettings(src) {
+  const s = JSON.parse(JSON.stringify(DEFAULTS));
+  if (!src) return s;
+  if (src.start) s.start = src.start;
+  if (src.end) s.end = src.end;
+  if (+src.limit > 0) s.limit = +src.limit;
+  if (src.dayModes) for (const d of Object.keys(s.dayModes)) if (MODE_LABEL[src.dayModes[d]]) s.dayModes[d] = src.dayModes[d];
+  // v1 had a single unpaid "off" mode; Sunday is a paid rest day
+  if (!(src.v >= 2) && s.dayModes[0] === 'off') s.dayModes[0] = 'paidoff';
+  return s;
+}
+let S = buildSettings();
+let saveTimer;
+function saveSettings() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(async () => {
+    if (!sb || !user) return;
+    const { error } = await sb.auth.updateUser({ data: { settings: S } });
+    toast(error ? 'Không lưu được cài đặt: ' + error.message : 'Đã lưu cài đặt');
+  }, 700);
+}
+
+/* ---------- state ---------- */
+let sb = null, user = null, records = [];
+const photoCache = new Map(); // photo_path -> Promise<Blob|null>
+const urlCache = new Map();   // photo_path -> object URL
+
+function displayName() {
+  const local = ((user && user.email) || '').split('@')[0];
+  return local ? local.charAt(0).toUpperCase() + local.slice(1) : 'bạn';
+}
+function showScreen(name) {
+  $('#setupScreen').hidden = name !== 'setup';
+  $('#authScreen').hidden = name !== 'auth';
+  $('#app').hidden = name !== 'app';
+}
+function showSetup(msg) { $('#setupMsg').textContent = msg; showScreen('setup'); }
+
+/* ---------- data (Supabase) ---------- */
+const fromRow = r => ({
+  id: r.id, date: r.date, type: r.type, time: String(r.time).slice(0, 5),
+  origDate: r.orig_date, origTime: r.orig_time, source: r.source, note: r.note || '',
+  photoPath: r.photo_path, createdAt: r.created_at,
+});
+const toRow = r => ({
+  id: r.id, user_id: user.id, date: r.date, type: r.type, time: r.time,
+  orig_date: r.origDate || null, orig_time: r.origTime || null, source: r.source || null,
+  note: r.note || '', photo_path: r.photoPath || null,
+});
+async function loadRecords() {
+  const all = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await sb.from(TABLE).select('*').order('date').order('time').range(from, from + 999);
+    if (error) throw error;
+    all.push(...data);
+    if (data.length < 1000) break;
+  }
+  records = all.map(fromRow);
+}
+function getPhoto(rec) {
+  if (rec.photoBlob) return Promise.resolve(rec.photoBlob);
+  if (!rec.photoPath) return Promise.resolve(null);
+  if (!photoCache.has(rec.photoPath)) {
+    photoCache.set(rec.photoPath, sb.storage.from(BUCKET).download(rec.photoPath).then(({ data, error }) => {
+      if (error) { photoCache.delete(rec.photoPath); return null; }
+      return data;
+    }));
+  }
+  return photoCache.get(rec.photoPath);
+}
+async function photoUrl(rec) {
+  const key = rec.photoPath;
+  if (key && urlCache.has(key)) return urlCache.get(key);
+  const blob = await getPhoto(rec);
+  if (!blob) return null;
+  const u = URL.createObjectURL(blob);
+  if (key) urlCache.set(key, u);
+  return u;
+}
+function clearCaches() {
+  urlCache.forEach(u => URL.revokeObjectURL(u));
+  urlCache.clear(); photoCache.clear();
+}
+
+/* ---------- calculations ---------- */
+const dayMode = ds => S.dayModes[new Date(ds + 'T00:00').getDay()] || 'off';
+
+function dayInfo(ds) {
+  const recs = records.filter(r => r.date === ds).sort((a, b) => a.time.localeCompare(b.time));
+  const ins = recs.filter(r => r.type === 'in').map(r => toMin(r.time));
+  const outs = recs.filter(r => r.type === 'out').map(r => toMin(r.time));
+  const firstIn = ins.length ? Math.min(...ins) : null;
+  const lastOut = outs.length ? Math.max(...outs) : null;
+  const mode = dayMode(ds), office = mode === 'office', t = todayStr();
+  const late = office && firstIn != null ? Math.max(0, firstIn - toMin(S.start)) : 0;
+  const early = office && lastOut != null ? Math.max(0, toMin(S.end) - lastOut) : 0;
+  let status;
+  if (isRestMode(mode)) status = 'off';
+  else if (mode === 'online') status = ds <= t ? 'online' : 'future';
+  else if (!recs.length) status = ds < t ? 'miss' : 'future';
+  else if (firstIn == null || lastOut == null) status = ds === t && firstIn != null ? (late ? 'warn' : 'progress') : 'half';
+  else status = late || early ? 'warn' : 'ok';
+  const autoCong = mode === 'online' || mode === 'paidoff';
+  const cong = autoCong ? (ds <= t ? 1 : 0) : (office && firstIn != null && lastOut != null ? 1 : 0);
+  return { recs, firstIn, lastOut, late, early, status, mode, cong };
+}
+
+function monthDays(y, m) {
+  const n = new Date(y, m + 1, 0).getDate();
+  return Array.from({ length: n }, (_, i) => `${y}-${pad(m + 1)}-${pad(i + 1)}`);
+}
+
+/** Month totals; "closed" = the month is over so the numbers are final. */
+function monthSummary(y, m) {
+  const t = todayStr();
+  const days = monthDays(y, m).map(ds => ({ ds, ...dayInfo(ds) }));
+  const s = { days, late: 0, early: 0, lateN: 0, earlyN: 0, full: 0, half: 0, miss: 0, online: 0, paidOff: 0, cong: 0, std: 0 };
+  for (const d of days) {
+    if (d.mode !== 'off') s.std++;
+    if (d.ds > t) continue;
+    s.late += d.late; s.early += d.early;
+    if (d.late) s.lateN++;
+    if (d.early) s.earlyN++;
+    if (d.mode === 'office' && d.firstIn != null && d.lastOut != null) s.full++;
+    if (d.status === 'half') s.half++;
+    if (d.status === 'miss') s.miss++;
+    if (d.status === 'online') s.online++;
+    if (d.mode === 'paidoff') s.paidOff++;
+    s.cong += d.cong;
+  }
+  s.closed = days[days.length - 1].ds < t;
+  s.notStarted = days[0].ds > t;
+  s.used = s.late + s.early;
+  s.lost = s.used >= S.limit;
+  return s;
+}
+
+/* ---------- render ---------- */
+let view = new Date(); view.setDate(1);
+
+function render() { renderToday(); renderMonth(); }
+
+/** Record whose photo represents the punch that counts (first in / last out). */
+function punchRec(info, type, minute) {
+  if (minute == null) return null;
+  const withPhoto = info.recs.filter(r => r.type === type && r.photoPath);
+  return withPhoto.find(r => toMin(r.time) === minute) || withPhoto[withPhoto.length - 1] || null;
+}
+async function setThumb(sel, rec) {
+  const el = $(sel);
+  el.dataset.id = rec ? rec.id : '';
+  if (!rec) { el.hidden = true; el.removeAttribute('src'); return; }
+  const u = await photoUrl(rec);
+  if (el.dataset.id !== rec.id) return;
+  if (u) { el.src = u; el.hidden = false; } else el.hidden = true;
+}
+
+function renderToday() {
+  const d = new Date(), info = dayInfo(ymd(d));
+  $('#hello').textContent = `Xin chào, ${displayName()} 👋`;
+  $('#ruleLine').textContent = `Giờ làm ${S.start}–${S.end} · ngưỡng chuyên cần ${S.limit} phút`;
+  $('#todayLabel').textContent = `Hôm nay · ${WD_FULL[d.getDay()]}, ${pad(d.getDate())}/${pad(d.getMonth() + 1)}`;
+  $('#tIn').textContent = info.firstIn != null ? fmt(info.firstIn) : 'Chưa chấm';
+  $('#tOut').textContent = info.lastOut != null ? fmt(info.lastOut) : 'Chưa chấm';
+  $('#tIn').classList.toggle('empty', info.firstIn == null);
+  $('#tOut').classList.toggle('empty', info.lastOut == null);
+  let badge = '';
+  if (info.mode === 'online') badge = '<span class="tag onl">Làm online · không cần chấm</span>';
+  else if (info.mode === 'paidoff') badge = '<span class="tag okt">Ngày nghỉ · vẫn tính công</span>';
+  else if (info.mode === 'off') badge = '<span class="tag">Ngày nghỉ</span>';
+  else {
+    const pen = [];
+    if (info.late) pen.push(`muộn ${info.late}′`);
+    if (info.early) pen.push(`sớm ${info.early}′`);
+    if (pen.length) badge = `<span class="tag late">${pen.join(' · ')}</span>`;
+  }
+  $('#todayBadge').innerHTML = badge;
+  const office = info.mode === 'office';
+  $('#btnIn').classList.toggle('primary', office && info.firstIn == null);
+  $('#btnOut').classList.toggle('primary', office && info.firstIn != null);
+  setThumb('#imgIn', punchRec(info, 'in', info.firstIn));
+  setThumb('#imgOut', punchRec(info, 'out', info.lastOut));
+}
+
+function renderMonth() {
+  const y = view.getFullYear(), m = view.getMonth(), t = todayStr();
+  $('#monthLabel').textContent = `Tháng ${m + 1}/${y}`;
+  const s = monthSummary(y, m);
+  const lead = (new Date(y, m, 1).getDay() + 6) % 7;
+  let html = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'].map(w => `<div class="wd">${w}</div>`).join('');
+  html += '<div></div>'.repeat(lead);
+  const line = (long, short, value = '', cls = '') => `<span class="ln ${cls}" data-l="${long}" data-s="${short}">${value}</span>`;
+  for (const d of s.days) {
+    let lines = '';
+    if (d.recs.length) {
+      lines += line('Vào', 'V', d.firstIn != null ? fmt(d.firstIn) : '--');
+      lines += line('Ra', 'R', d.lastOut != null ? fmt(d.lastOut) : '--');
+    }
+    if (d.late) lines += line('Muộn', 'M', `${d.late}′`, 'pen');
+    if (d.early) lines += line('Sớm', 'S', `${d.early}′`, 'pen');
+    if (!d.recs.length) {
+      if (d.mode === 'online') lines += line('Online', 'Online', '', 'note');
+      else if (d.mode === 'paidoff') lines += line('Nghỉ · có công', 'Nghỉ', '', 'note');
+      else if (d.mode === 'off') lines += line('Nghỉ', 'Nghỉ', '', 'note');
+      else if (d.status === 'miss') lines += line('Không chấm', '✕', '', 'note');
+    }
+    html += `<button class="day s-${d.status}${d.ds === t ? ' today' : ''}" data-d="${d.ds}">
+      <span class="n">${+d.ds.slice(8)}</span>${lines}</button>`;
+  }
+  $('#cal').innerHTML = html;
+
+  const lim = Math.max(1, +S.limit || 60);
+  const state = s.used >= lim ? 'lost' : s.used >= lim * 0.7 ? 'mid' : 'ok';
+  const isCurrent = y === new Date().getFullYear() && m === new Date().getMonth();
+  $('#sumTitle').textContent = `Chuyên cần tháng ${m + 1}${isCurrent ? '' : '/' + y}`;
+  $('#sumUsed').textContent = s.used;
+  $('#sumLimit').textContent = lim;
+  const bar = $('#bar');
+  bar.style.width = Math.min(100, s.used / lim * 100) + '%';
+  bar.className = state === 'ok' ? '' : state;
+  const st = $('#sumStatus');
+  st.className = 'pill ' + state;
+  st.textContent = state === 'lost' ? 'Mất chuyên cần' : `Đạt · còn ${lim - s.used}′`;
+  $('#congVal').textContent = s.cong;
+  $('#congStd').textContent = s.std;
+  const tag = $('#congTag');
+  if (s.closed) { tag.textContent = '✓ Đã chốt tháng'; tag.className = 'tag okt'; }
+  else if (s.notStarted) { tag.textContent = 'Chưa đến tháng'; tag.className = 'tag'; }
+  else { tag.textContent = 'Tạm tính đến hôm nay'; tag.className = 'tag'; }
+  $('#sumStats').innerHTML = `
+    <div><b>${s.lateN}</b><span>muộn · ${s.late}′</span></div>
+    <div><b>${s.earlyN}</b><span>sớm · ${s.early}′</span></div>
+    <div><b>${s.online}</b><span>online</span></div>
+    <div><b>${s.half}</b><span>thiếu chấm</span></div>
+    <div><b>${s.miss}</b><span>không chấm</span></div>`;
+}
+
+/* ---------- EXIF DateTimeOriginal ---------- */
+async function readExifDate(file) {
+  try {
+    const v = new DataView(await file.slice(0, 256 * 1024).arrayBuffer());
+    if (v.getUint16(0) !== 0xFFD8) return null;
+    let off = 2;
+    while (off + 10 < v.byteLength) {
+      const marker = v.getUint16(off), len = v.getUint16(off + 2);
+      if ((marker & 0xFF00) !== 0xFF00) break;
+      if (marker === 0xFFE1 && v.getUint32(off + 4) === 0x45786966) return parseTiffDate(v, off + 10);
+      off += 2 + len;
+    }
+  } catch (e) {}
+  return null;
+}
+function parseTiffDate(v, t) {
+  const le = v.getUint16(t) === 0x4949;
+  const u16 = o => v.getUint16(o, le), u32 = o => v.getUint32(o, le);
+  const ifd = o => { const tags = {}, n = u16(t + o); for (let i = 0; i < n; i++) { const e = t + o + 2 + i * 12; tags[u16(e)] = e; } return tags; };
+  const str = e => { const c = u32(e + 4), o = c > 4 ? t + u32(e + 8) : e + 8; let s = ''; for (let i = 0; i < c - 1; i++) s += String.fromCharCode(v.getUint8(o + i)); return s; };
+  const ifd0 = ifd(u32(t + 4));
+  let s = null;
+  if (ifd0[0x8769] != null) { const ex = ifd(u32(ifd0[0x8769] + 8)); if (ex[0x9003] != null) s = str(ex[0x9003]); }
+  if (!s && ifd0[0x0132] != null) s = str(ifd0[0x0132]);
+  const m = s && s.match(/^(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2})/);
+  return m ? new Date(+m[1], m[2] - 1, +m[3], +m[4], +m[5]) : null;
+}
+
+/* ---------- image compress ---------- */
+function loadImg(url) { return new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; }); }
+async function compress(file, max = 1600) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await loadImg(url);
+    const k = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+    const c = document.createElement('canvas');
+    c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    return await new Promise(r => c.toBlob(b => r(b || file), 'image/jpeg', 0.82));
+  } catch (e) { return file; }
+  finally { URL.revokeObjectURL(url); }
+}
+const PHOTO_EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/heic': 'heic' };
+
+/* ---------- entry sheet ---------- */
+let editing = null, previewToken = 0;
+function nextType(ds) { return dayInfo(ds).firstIn == null ? 'in' : 'out'; }
+
+function openEntry(rec) {
+  editing = { ...rec };
+  const isExisting = records.some(r => r.id === rec.id);
+  $('#eTitle').textContent = isExisting ? 'Sửa bản ghi' : 'Lưu chấm công';
+  document.querySelector(`input[name=eType][value=${rec.type}]`).checked = true;
+  $('#eDate').value = rec.date;
+  $('#eTime').value = rec.time;
+  $('#eNote').value = rec.note || '';
+  let src = SOURCE_LABEL[rec.source] || '';
+  if (rec.origTime && rec.origTime !== rec.time) src += ` · đã sửa (gốc ${rec.origDate || rec.date} ${rec.origTime})`;
+  $('#eSource').textContent = src;
+  const img = $('#ePreview'), tok = ++previewToken;
+  img.hidden = true; img.removeAttribute('src');
+  if (rec.photoBlob) {
+    editing.previewUrl = URL.createObjectURL(rec.photoBlob);
+    img.src = editing.previewUrl; img.hidden = false;
+  } else if (rec.photoPath) {
+    photoUrl(rec).then(u => { if (u && tok === previewToken) { img.src = u; img.hidden = false; } });
+  }
+  $('#eDelete').hidden = !isExisting;
+  $('#entrySheet').showModal();
+}
+$('#entrySheet').addEventListener('close', () => {
+  if (editing && editing.previewUrl) { URL.revokeObjectURL(editing.previewUrl); editing.previewUrl = null; }
+});
+
+$('#entryForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const date = $('#eDate').value, time = $('#eTime').value;
+  if (!date || !time) { toast('Nhập ngày và giờ nhé'); return; }
+  const isNew = !records.some(x => x.id === editing.id);
+  const rec = {
+    ...editing, id: editing.id || uuid(), date, time,
+    type: document.querySelector('input[name=eType]:checked').value,
+    note: $('#eNote').value.trim(),
+  };
+  const btn = $('#eSave');
+  btn.disabled = true; btn.textContent = 'Đang lưu...';
+  try {
+    if (isNew && rec.photoBlob) {
+      const type = rec.photoBlob.type || 'image/jpeg';
+      const path = `${user.id}/${date.slice(0, 7)}/${rec.id}.${PHOTO_EXT[type] || 'jpg'}`;
+      const { error } = await sb.storage.from(BUCKET).upload(path, rec.photoBlob, { contentType: type, upsert: true });
+      if (error) throw error;
+      rec.photoPath = path;
+      photoCache.set(path, Promise.resolve(rec.photoBlob));
+    }
+    const q = isNew ? sb.from(TABLE).insert(toRow(rec)) : sb.from(TABLE).update(toRow(rec)).eq('id', rec.id);
+    const { data, error } = await q.select().single();
+    if (error) throw error;
+    const saved = fromRow(data);
+    records = records.filter(x => x.id !== saved.id).concat(saved);
+    $('#entrySheet').close();
+    toast(`Đã lưu: ${TYPE_LABEL[saved.type]} ${saved.time}`);
+    render();
+    if ($('#daySheet').open) renderDay();
+  } catch (err) {
+    toast('Lưu thất bại: ' + (err.message || err), 4000);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Lưu';
+  }
+});
+$('#eCancel').onclick = () => $('#entrySheet').close();
+$('#eDelete').onclick = async () => {
+  if (!confirm('Xoá bản ghi này?')) return;
+  const { error } = await sb.from(TABLE).delete().eq('id', editing.id);
+  if (error) { toast('Xoá thất bại: ' + error.message, 4000); return; }
+  if (editing.photoPath) sb.storage.from(BUCKET).remove([editing.photoPath]).catch(() => {});
+  records = records.filter(x => x.id !== editing.id);
+  $('#entrySheet').close();
+  render();
+  if ($('#daySheet').open) renderDay();
+};
+$('#ePreview').onclick = e => showPhoto(e.target.src);
+
+/* ---------- capture ---------- */
+let pending = { fixedType: 'in', date: null };
+async function handleFile(file) {
+  if (!file) return;
+  toast('Đang xử lý ảnh...');
+  const exif = await readExifDate(file);
+  const now = new Date();
+  const date = exif ? ymd(exif) : (pending.date || ymd(now));
+  const time = exif ? hm(exif) : hm(now);
+  const photoBlob = await compress(file);
+  const type = pending.fixedType || nextType(date);
+  openEntry({ type, date, time, origDate: date, origTime: time, photoBlob, source: exif ? 'exif' : 'upload' });
+}
+$('#camIn').onchange = e => handleFile(e.target.files[0]);
+$('#galIn').onchange = e => handleFile(e.target.files[0]);
+
+function capture(type) { pending = { fixedType: type, date: null }; $('#camIn').value = ''; $('#camIn').click(); }
+function pickGallery(date) { pending = { fixedType: null, date }; $('#galIn').value = ''; $('#galIn').click(); }
+$('#btnIn').onclick = () => capture('in');
+$('#btnOut').onclick = () => capture('out');
+$('#btnGallery').onclick = () => pickGallery(null);
+$('#imgIn').onclick = e => showPhoto(e.target.src);
+$('#imgOut').onclick = e => showPhoto(e.target.src);
+
+/* ---------- day sheet ---------- */
+let dayOpen = null;
+function openDay(ds) { dayOpen = ds; renderDay(); if (!$('#daySheet').open) $('#daySheet').showModal(); }
+function renderDay() {
+  const d = new Date(dayOpen + 'T00:00'), info = dayInfo(dayOpen);
+  $('#dTitle').textContent = `${WD_FULL[d.getDay()]}, ${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
+  const parts = [STATUS_LABEL[info.status]].filter(Boolean);
+  if (info.mode === 'online') parts.push('không cần chấm công');
+  if (info.late) parts.push(`đi muộn ${info.late} phút`);
+  if (info.early) parts.push(`về sớm ${info.early} phút`);
+  $('#dInfo').textContent = parts.join(' · ') || 'Chưa có bản ghi';
+  $('#dRecs').innerHTML = info.recs.map(r => {
+    const img = r.photoPath ? `<img data-id="${r.id}" alt="">` : '<div class="noimg">không ảnh</div>';
+    const src = r.source === 'exif' ? 'giờ theo ảnh' : r.source === 'manual' ? 'nhập tay' : 'giờ tải lên';
+    return `<button class="rec" data-id="${r.id}">${img}<div class="grow"><b>${TYPE_LABEL[r.type]} ${r.time}</b><br>
+      <small class="muted">${src}${r.origTime && r.origTime !== r.time ? ' · đã sửa' : ''}${r.note ? ' · ' + esc(r.note) : ''}</small></div></button>`;
+  }).join('');
+  for (const el of document.querySelectorAll('#dRecs img[data-id]')) {
+    const r = records.find(x => x.id === el.dataset.id);
+    if (r) photoUrl(r).then(u => { if (u) el.src = u; });
+  }
+}
+$('#dRecs').onclick = e => {
+  const b = e.target.closest('.rec'); if (!b) return;
+  const r = records.find(x => x.id === b.dataset.id); if (r) openEntry(r);
+};
+$('#dGallery').onclick = () => pickGallery(dayOpen);
+$('#dClose').onclick = () => $('#daySheet').close();
+$('#cal').onclick = e => { const b = e.target.closest('.day'); if (b) openDay(b.dataset.d); };
+
+function showPhoto(url) { if (!url) return; $('#photoView img').src = url; $('#photoView').showModal(); }
+$('#photoView').onclick = () => $('#photoView').close();
+
+/* ---------- month nav ---------- */
+$('#prevM').onclick = () => { view.setMonth(view.getMonth() - 1); renderMonth(); };
+$('#nextM').onclick = () => { view.setMonth(view.getMonth() + 1); renderMonth(); };
+
+/* ---------- settings UI ---------- */
+function renderSettings() {
+  $('#accName').textContent = displayName();
+  $('#accEmail').textContent = user ? user.email : '';
+  $('#sStart').value = S.start; $('#sEnd').value = S.end; $('#sLimit').value = S.limit;
+  $('#sModes').innerHTML = [1, 2, 3, 4, 5, 6, 0].map(d =>
+    `<label><b>${WD_SHORT[d]}</b><select data-d="${d}">${Object.entries(MODE_LABEL).map(([k, v]) =>
+      `<option value="${k}" ${S.dayModes[d] === k ? 'selected' : ''}>${v}</option>`).join('')}</select></label>`).join('');
+}
+function onSettingsChange() {
+  S.start = $('#sStart').value || DEFAULTS.start;
+  S.end = $('#sEnd').value || DEFAULTS.end;
+  S.limit = Math.max(1, +$('#sLimit').value || DEFAULTS.limit);
+  for (const sel of document.querySelectorAll('#sModes select')) S.dayModes[sel.dataset.d] = sel.value;
+  saveSettings(); render();
+}
+['#sStart', '#sEnd', '#sLimit'].forEach(s => $(s).addEventListener('change', onSettingsChange));
+$('#sModes').addEventListener('change', onSettingsChange);
+$('#btnSettings').onclick = () => $('#settingsSheet').showModal();
+$('#sClose').onclick = () => $('#settingsSheet').close();
+
+/* ---------- export ---------- */
+function download(blob, name) {
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+const fileSlug = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/gi, 'd').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase();
+
+function exportCsv() {
+  const y = view.getFullYear(), m = view.getMonth(), s = monthSummary(y, m);
+  const rows = [[`Nhân viên: ${displayName()} (${user.email})`], [],
+    ['Ngày', 'Thứ', 'Giờ vào', 'Giờ ra', 'Đi muộn (phút)', 'Về sớm (phút)', 'Công', 'Trạng thái', 'Ghi chú']];
+  for (const d of s.days) {
+    rows.push([d.ds.split('-').reverse().join('/'), WD_SHORT[new Date(d.ds + 'T00:00').getDay()],
+      d.firstIn != null ? fmt(d.firstIn) : '', d.lastOut != null ? fmt(d.lastOut) : '',
+      d.late || '', d.early || '', d.cong || '', STATUS_LABEL[d.status], d.recs.map(r => r.note).filter(Boolean).join('; ')]);
+  }
+  rows.push(['Tổng', '', '', '', s.late, s.early, s.cong, s.lost ? 'Mất chuyên cần' : 'Đạt chuyên cần', '']);
+  const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\r\n');
+  download(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }), `cham-cong-${fileSlug(displayName())}-${y}-${pad(m + 1)}.csv`);
+}
+
+/* ---------- Excel export (ExcelJS, loaded on demand) ---------- */
+const EXCELJS_URLS = [
+  'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js',
+  'https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js',
+];
+function loadScript(src) {
+  return new Promise((res, rej) => {
+    const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = rej;
+    document.head.appendChild(s);
+  });
+}
+async function ensureExcelJS() {
+  for (const u of EXCELJS_URLS) {
+    if (window.ExcelJS) return true;
+    try { await loadScript(u); } catch (e) {}
+  }
+  return !!window.ExcelJS;
+}
+const XL = {
+  title: 'FF1D4ED8', head: 'FF1F2937', border: 'FFD1D5DB', muted: 'FF6B7280', total: 'FFE5E7EB',
+  status: {
+    ok: ['FFDCFCE7', 'FF15803D'], warn: ['FFFEF3C7', 'FFB45309'],
+    half: ['FFFEE2E2', 'FFB91C1C'], miss: ['FFFEE2E2', 'FFB91C1C'],
+    progress: ['FFDBEAFE', 'FF1D4ED8'], online: ['FFEDE9FE', 'FF6D28D9'],
+    off: ['FFF3F4F6', 'FF9CA3AF'], future: [null, 'FF6B7280'],
+  },
+};
+const xFill = argb => ({ type: 'pattern', pattern: 'solid', fgColor: { argb } });
+const xThin = { style: 'thin', color: { argb: XL.border } };
+const xBox = { top: xThin, left: xThin, bottom: xThin, right: xThin };
+const xDate = ds => { const [a, b, c] = ds.split('-').map(Number); return new Date(Date.UTC(a, b - 1, c)); };
+
+function styleHeader(row) {
+  row.height = 24;
+  row.eachCell(c => {
+    c.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    c.fill = xFill(XL.head);
+    c.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    c.border = xBox;
+  });
+}
+/** Row 1 = title bar, rows 2-3 = info lines; the table header goes on row 4. */
+function addTitle(ws, lastCol, title, lines) {
+  ws.mergeCells(`A1:${lastCol}1`);
+  const t = ws.getCell('A1');
+  t.value = title;
+  t.font = { bold: true, size: 16, color: { argb: 'FFFFFFFF' } };
+  t.fill = xFill(XL.title);
+  t.alignment = { vertical: 'middle', horizontal: 'center' };
+  ws.getRow(1).height = 32;
+  lines.forEach((text, i) => {
+    const r = i + 2;
+    ws.mergeCells(`A${r}:${lastCol}${r}`);
+    const c = ws.getCell(`A${r}`);
+    c.value = text;
+    c.font = i === 0 ? { bold: true, size: 12 } : { italic: true, color: { argb: XL.muted } };
+    c.alignment = { horizontal: 'center' };
+  });
+}
+
+/** Image box inside the "Ảnh" column: column width in Excel chars, box size in px. */
+const XL_IMG = { colChars: 26, colPx: 26 * 7 + 5, w: 170, h: 128, pad: 5 };
+
+async function blobToBase64Url(blob) {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let s = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return `data:${blob.type || 'image/jpeg'};base64,${btoa(s)}`;
+}
+/** Downscale a stored photo for embedding; falls back to the original bytes if canvas is unavailable. */
+async function excelThumb(blob, max = 520) {
+  try {
+    const bmp = await createImageBitmap(blob);
+    const k = Math.min(1, max / Math.max(bmp.width, bmp.height));
+    const c = document.createElement('canvas');
+    c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+    c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+    return { url: c.toDataURL('image/jpeg', 0.75), w: c.width, h: c.height };
+  } catch (e) {
+    return { url: await blobToBase64Url(blob), w: 4, h: 3 };
+  }
+}
+async function addPhotoToCell(wb, ws, blob, rowNo) {
+  const t = await excelThumb(blob);
+  const ext = /^data:image\/png/.test(t.url) ? 'png' : /^data:image\/jpe?g/.test(t.url) ? 'jpeg' : null;
+  if (!ext) return false;
+  const k = Math.min(XL_IMG.w / t.w, XL_IMG.h / t.h);
+  const w = Math.round(t.w * k), h = Math.round(t.h * k);
+  const rowPx = XL_IMG.h + XL_IMG.pad * 2;
+  ws.getRow(rowNo).height = rowPx * 0.75;
+  const id = wb.addImage({ base64: t.url, extension: ext });
+  ws.addImage(id, {
+    tl: { col: 6 + (XL_IMG.colPx - w) / 2 / XL_IMG.colPx, row: rowNo - 1 + (rowPx - h) / 2 / rowPx },
+    ext: { width: w, height: h },
+    editAs: 'oneCell',
+  });
+  return true;
+}
+
+async function exportExcel() {
+  toast('Đang tạo file Excel...');
+  if (!(await ensureExcelJS())) {
+    toast('Không tải được thư viện Excel (mất mạng?), xuất CSV thay thế');
+    exportCsv();
+    return;
+  }
+  const y = view.getFullYear(), m = view.getMonth(), s = monthSummary(y, m);
+  const exportedAt = todayStr().split('-').reverse().join('/');
+  const who = `Nhân viên: ${displayName()}  ·  Email: ${user.email}`;
+  const wb = new ExcelJS.Workbook();
+  wb.creator = `${displayName()} <${user.email}>`;
+
+  /* Sheet 1: bảng công theo ngày */
+  const ws = wb.addWorksheet(`Tháng ${m + 1}-${y}`, {
+    views: [{ state: 'frozen', ySplit: 4 }],
+    pageSetup: { paperSize: 9, orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
+  });
+  ws.columns = [{ width: 13 }, { width: 8 }, { width: 10 }, { width: 10 }, { width: 12 }, { width: 12 }, { width: 8 }, { width: 15 }, { width: 36 }];
+  addTitle(ws, 'I', `BẢNG CHẤM CÔNG THÁNG ${m + 1}/${y}`, [who,
+    `Giờ quy định ${S.start} – ${S.end}  ·  Mất chuyên cần khi muộn + sớm ≥ ${S.limit} phút/tháng  ·  Xuất ngày ${exportedAt}  ·  Ảnh chấm công xem ở sheet “Chi tiết & ảnh”`]);
+  ws.getRow(4).values = ['Ngày', 'Thứ', 'Giờ vào', 'Giờ ra', 'Đi muộn (phút)', 'Về sớm (phút)', 'Công', 'Trạng thái', 'Ghi chú'];
+  styleHeader(ws.getRow(4));
+
+  const first = 5;
+  let r = first;
+  for (const d of s.days) {
+    const row = ws.getRow(r);
+    row.values = [
+      xDate(d.ds), WD_SHORT[new Date(d.ds + 'T00:00').getDay()],
+      d.firstIn != null ? d.firstIn / 1440 : null, d.lastOut != null ? d.lastOut / 1440 : null,
+      d.late || null, d.early || null, d.cong || null, STATUS_LABEL[d.status],
+      d.recs.map(x => x.note).filter(Boolean).join('; '),
+    ];
+    const [bg, fg] = XL.status[d.status];
+    for (let c = 1; c <= 9; c++) {
+      const cell = row.getCell(c);
+      cell.border = xBox;
+      cell.alignment = { vertical: 'middle', horizontal: c === 9 ? 'left' : 'center', wrapText: c === 9 };
+      if (d.status === 'off') { cell.fill = xFill(XL.status.off[0]); cell.font = { color: { argb: XL.status.off[1] } }; }
+    }
+    row.getCell(1).numFmt = 'dd/mm/yyyy';
+    row.getCell(3).numFmt = 'hh:mm';
+    row.getCell(4).numFmt = 'hh:mm';
+    if (d.late) { row.getCell(5).font = { bold: true, color: { argb: XL.status.warn[1] } }; row.getCell(3).font = { color: { argb: XL.status.warn[1] } }; }
+    if (d.early) { row.getCell(6).font = { bold: true, color: { argb: XL.status.warn[1] } }; row.getCell(4).font = { color: { argb: XL.status.warn[1] } }; }
+    if (d.cong) row.getCell(7).font = { bold: true };
+    if (d.status !== 'off') {
+      const sc = row.getCell(8);
+      if (bg) sc.fill = xFill(bg);
+      sc.font = { bold: true, color: { argb: fg } };
+    }
+    r++;
+  }
+  const last = r - 1;
+
+  /* Dòng tổng */
+  const tot = ws.getRow(r);
+  ws.mergeCells(`A${r}:D${r}`);
+  tot.getCell(1).value = 'TỔNG CỘNG';
+  tot.getCell(5).value = { formula: `SUM(E${first}:E${last})`, result: s.late };
+  tot.getCell(6).value = { formula: `SUM(F${first}:F${last})`, result: s.early };
+  tot.getCell(7).value = { formula: `SUM(G${first}:G${last})`, result: s.cong };
+  for (let c = 1; c <= 9; c++) {
+    const cell = tot.getCell(c);
+    cell.font = { bold: true };
+    cell.fill = xFill(XL.total);
+    cell.border = xBox;
+    cell.alignment = { horizontal: 'center', vertical: 'middle' };
+  }
+  tot.height = 22;
+  const totalRow = r;
+
+  /* Khối tổng kết */
+  const summary = [
+    ['Tổng công (ngày)', { formula: `G${totalRow}`, result: s.cong }, 'cong'],
+    ['Số ngày công chuẩn trong tháng', s.std],
+    ['Trong đó làm online', s.online],
+    ['Trong đó nghỉ có công', s.paidOff],
+    ['Tổng đi muộn + về sớm (phút)', { formula: `E${totalRow}+F${totalRow}`, result: s.used }],
+    ['Ngưỡng chuyên cần (phút)', +S.limit],
+    ['Kết quả chuyên cần', { formula: `IF(E${totalRow + 6}>=E${totalRow + 7},"MẤT CHUYÊN CẦN","ĐẠT CHUYÊN CẦN")`, result: s.lost ? 'MẤT CHUYÊN CẦN' : 'ĐẠT CHUYÊN CẦN' }, 'result'],
+    ['Số ngày thiếu chấm', s.half],
+    ['Số ngày không chấm', s.miss],
+    ['Trạng thái bảng công', s.closed ? 'ĐÃ CHỐT THÁNG' : `Tạm tính đến ${exportedAt}`],
+  ];
+  r = totalRow + 2;
+  for (const [label, value, kind] of summary) {
+    ws.mergeCells(`A${r}:D${r}`);
+    ws.mergeCells(`E${r}:G${r}`);
+    const lc = ws.getCell(`A${r}`), vc = ws.getCell(`E${r}`);
+    lc.value = label; vc.value = value;
+    lc.font = { bold: true };
+    lc.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
+    vc.alignment = { horizontal: 'center', vertical: 'middle' };
+    vc.font = { bold: true };
+    [lc, ws.getCell(`D${r}`), vc, ws.getCell(`G${r}`)].forEach(c => { c.border = xBox; });
+    lc.fill = xFill('FFF9FAFB');
+    if (kind === 'result') {
+      const [bg, fg] = s.lost ? XL.status.miss : XL.status.ok;
+      vc.fill = xFill(bg);
+      vc.font = { bold: true, color: { argb: fg } };
+    }
+    if (kind === 'cong') {
+      vc.fill = xFill(XL.status.progress[0]);
+      vc.font = { bold: true, size: 13, color: { argb: XL.status.progress[1] } };
+    }
+    r++;
+  }
+
+  /* Sheet 2: chi tiết từng lần chấm, kèm ảnh */
+  const wd = wb.addWorksheet('Chi tiết & ảnh', { views: [{ state: 'frozen', ySplit: 4 }] });
+  wd.columns = [{ width: 13 }, { width: 8 }, { width: 8 }, { width: 10 }, { width: 24 }, { width: 30 }, { width: XL_IMG.colChars }];
+  addTitle(wd, 'G', `CHI TIẾT LẦN CHẤM CÔNG THÁNG ${m + 1}/${y}`, [who,
+    `Mỗi dòng là một lần chấm kèm ảnh chụp máy chấm công  ·  Xuất ngày ${exportedAt}`]);
+  wd.getRow(4).values = ['Ngày', 'Thứ', 'Loại', 'Giờ', 'Nguồn giờ', 'Ghi chú', 'Ảnh chấm công'];
+  styleHeader(wd.getRow(4));
+  const prefix = `${y}-${pad(m + 1)}-`;
+  const monthRecs = records.filter(x => x.date.startsWith(prefix))
+    .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+  const srcText = x => (x.source === 'exif' ? 'Theo giờ chụp ảnh' : x.source === 'manual' ? 'Nhập tay' : 'Giờ tải lên')
+    + (x.origTime && x.origTime !== x.time ? ` (đã sửa, gốc ${x.origTime})` : '');
+  let dr = 5, done = 0;
+  const withPhotos = monthRecs.filter(x => x.photoPath || x.photoBlob).length;
+  for (const x of monthRecs) {
+    const blob = await getPhoto(x);
+    const row = wd.getRow(dr);
+    row.values = [xDate(x.date), WD_SHORT[new Date(x.date + 'T00:00').getDay()], TYPE_LABEL[x.type],
+      toMin(x.time) / 1440, srcText(x), x.note || '', blob ? '' : 'Không có ảnh'];
+    for (let c = 1; c <= 7; c++) {
+      const cell = row.getCell(c);
+      cell.border = xBox;
+      cell.alignment = { vertical: 'middle', horizontal: c === 5 || c === 6 ? 'left' : 'center', wrapText: c === 5 || c === 6 };
+    }
+    row.getCell(1).numFmt = 'dd/mm/yyyy';
+    row.getCell(4).numFmt = 'hh:mm';
+    row.getCell(3).font = { bold: true, color: { argb: x.type === 'in' ? 'FF15803D' : 'FF1D4ED8' } };
+    row.getCell(7).font = { italic: true, color: { argb: XL.muted } };
+    if (blob && (await addPhotoToCell(wb, wd, blob, dr))) {
+      toast(`Đang chèn ảnh ${++done}/${withPhotos}...`);
+    }
+    dr++;
+  }
+  if (monthRecs.length) wd.autoFilter = { from: 'A4', to: `G${dr - 1}` };
+
+  const buf = await wb.xlsx.writeBuffer();
+  download(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+    `bang-cham-cong-${fileSlug(displayName())}-${y}-${pad(m + 1)}.xlsx`);
+  toast('Đã xuất file Excel');
+}
+$('#btnExcel').onclick = () => exportExcel().catch(() => { toast('Lỗi khi tạo Excel, xuất CSV thay thế'); exportCsv(); });
+
+/* ---------- auth: email + password (main), email link / code (optional) ---------- */
+const redirectUrl = () => /^https?:$/.test(location.protocol) ? location.origin + location.pathname : undefined;
+const authMode = () => document.querySelector('input[name=authMode]:checked').value;
+function authMsg(text, kind = '') { const m = $('#aMsg'); m.textContent = text; m.className = 'msg ' + kind; }
+function authError(err) {
+  const m = (err && err.message) || String(err);
+  const wait = m.match(/after (\d+) seconds?/i);
+  if (wait) return `Vừa gửi email rồi, đợi ${wait[1]} giây nữa mới gửi lại được`;
+  if (/rate limit/i.test(m)) return 'Hệ thống email đã hết lượt gửi trong giờ này (giới hạn gói miễn phí). Dùng đăng nhập bằng mật khẩu, hoặc thử lại sau';
+  if (/invalid login credentials/i.test(m)) return 'Sai email hoặc mật khẩu';
+  if (/email not confirmed/i.test(m)) return 'Email chưa được xác nhận. Nhờ quản trị tắt "Confirm email" trên Supabase, hoặc bấm link trong email xác nhận';
+  if (/already registered|already been registered/i.test(m)) return 'Email này đã có tài khoản, chuyển sang Đăng nhập nhé';
+  if (/password should be|weak password/i.test(m)) return 'Mật khẩu tối thiểu 6 ký tự';
+  if (/signups not allowed/i.test(m)) return 'Hệ thống đang tắt đăng ký tài khoản mới';
+  if (/expired or is invalid|invalid.*token|otp/i.test(m)) return 'Mã sai hoặc đã hết hạn, gửi lại nhé';
+  if (/failed to fetch/i.test(m)) return 'Không kết nối được máy chủ, kiểm tra mạng nhé';
+  return 'Lỗi: ' + m;
+}
+function authEmail() {
+  const email = $('#aEmail').value.trim();
+  if (!/^\S+@\S+\.\S+$/.test(email)) { authMsg('Nhập đúng địa chỉ email trước nhé', 'bad'); $('#aEmail').focus(); return null; }
+  return email;
+}
+
+document.querySelectorAll('input[name=authMode]').forEach(i => i.addEventListener('change', () => {
+  const up = authMode() === 'up';
+  $('#aSubmit').textContent = up ? 'Tạo tài khoản' : 'Đăng nhập';
+  $('#aPass').autocomplete = up ? 'new-password' : 'current-password';
+  $('#aPass2Row').hidden = !up;
+  $('#aPass2').required = up;
+  $('#authLinks').hidden = up;
+  $('#sentLinks').hidden = true;
+  $('#otpStep').hidden = true;
+  authMsg('');
+}));
+
+$('#authForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const email = authEmail(); if (!email) return;
+  const password = $('#aPass').value, up = authMode() === 'up';
+  if (up && password !== $('#aPass2').value) { authMsg('Hai lần nhập mật khẩu không khớp', 'bad'); return; }
+  const btn = $('#aSubmit'), label = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Đang xử lý...'; authMsg('');
+  try {
+    if (up) {
+      const { data, error } = await sb.auth.signUp({ email, password, options: { emailRedirectTo: redirectUrl() } });
+      if (error) throw error;
+      if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) throw new Error('already registered');
+      if (!data.session) {
+        authMsg('Đã tạo tài khoản nhưng Supabase đang bật xác nhận email. Mở email bấm link xác nhận, hoặc nhờ quản trị tắt "Confirm email".', 'ok');
+        return;
+      }
+      await enterApp(data.session.user, true);
+    } else {
+      const { data, error } = await sb.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      await enterApp(data.user, true);
+    }
+  } catch (err) {
+    authMsg(authError(err), 'bad');
+  } finally {
+    btn.disabled = false; btn.textContent = label;
+  }
+});
+
+$('#aForgot').onclick = async () => {
+  const email = authEmail(); if (!email) return;
+  const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: redirectUrl() });
+  authMsg(error ? authError(error) : `Đã gửi email đặt lại mật khẩu tới ${email}. Bấm link trong email để đặt mật khẩu mới.`, error ? 'bad' : 'ok');
+};
+async function askNewPassword() {
+  const p = prompt('Nhập mật khẩu mới (tối thiểu 6 ký tự):');
+  if (!p) return;
+  const { error } = await sb.auth.updateUser({ password: p });
+  toast(error ? 'Đổi mật khẩu lỗi: ' + authError(error) : 'Đã đổi mật khẩu', 3500);
+}
+
+/* Optional passwordless login: magic link (or code if the email template has one) */
+let otpEmail = '', otpTimer = null;
+const LINK_LABEL = 'Đăng nhập bằng link qua email';
+function otpCooldown(sec) {
+  const btn = $('#otpSend');
+  clearInterval(otpTimer);
+  btn.disabled = true;
+  const tick = () => {
+    if (sec <= 0) { clearInterval(otpTimer); btn.disabled = false; btn.textContent = 'Gửi lại link qua email'; return; }
+    btn.textContent = `Gửi lại link sau ${sec--}s`;
+  };
+  tick();
+  otpTimer = setInterval(tick, 1000);
+}
+function resetOtpForm() {
+  clearInterval(otpTimer);
+  otpEmail = '';
+  $('#otpStep').hidden = true;
+  $('#sentLinks').hidden = true;
+  $('#otpCode').value = '';
+  $('#otpSend').disabled = false;
+  $('#otpSend').textContent = LINK_LABEL;
+  authMsg('');
+}
+$('#otpSend').onclick = async () => {
+  const email = authEmail(); if (!email) return;
+  const btn = $('#otpSend');
+  btn.disabled = true; btn.textContent = 'Đang gửi...'; authMsg('');
+  const { error } = await sb.auth.signInWithOtp({ email, options: { shouldCreateUser: true, emailRedirectTo: redirectUrl() } });
+  if (error) { btn.disabled = false; btn.textContent = LINK_LABEL; authMsg(authError(error), 'bad'); return; }
+  otpEmail = email;
+  $('#sentLinks').hidden = false;
+  authMsg(`Đã gửi link tới ${email}. Mở email trên chính máy này và bấm "Sign in", web sẽ tự đăng nhập.`, 'ok');
+  otpCooldown(60);
+};
+$('#otpShow').onclick = () => { $('#otpStep').hidden = false; $('#otpCode').focus(); };
+$('#otpStep').addEventListener('submit', async e => {
+  e.preventDefault();
+  const token = $('#otpCode').value.replace(/\D/g, '');
+  if (token.length < 6) { authMsg('Nhập đủ mã số trong email nhé', 'bad'); return; }
+  const btn = $('#otpVerify');
+  btn.disabled = true; btn.textContent = 'Đang kiểm tra...';
+  try {
+    let res = await sb.auth.verifyOtp({ email: otpEmail, token, type: 'email' });
+    if (res.error) {
+      const retry = await sb.auth.verifyOtp({ email: otpEmail, token, type: 'signup' });
+      if (!retry.error) res = retry;
+    }
+    if (res.error) throw res.error;
+    resetOtpForm();
+    await enterApp(res.data.user, true);
+  } catch (err) {
+    authMsg(authError(err), 'bad');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Xác nhận mã';
+  }
+});
+
+$('#btnLogout').onclick = async () => {
+  $('#settingsSheet').close();
+  await sb.auth.signOut();
+  leaveApp();
+  toast('Đã đăng xuất');
+};
+
+async function enterApp(u, fresh) {
+  user = u;
+  S = buildSettings(u.user_metadata && u.user_metadata.settings);
+  showScreen('app');
+  renderSettings(); render();
+  try {
+    await loadRecords();
+  } catch (err) {
+    toast('Không tải được dữ liệu: ' + (err.message || err), 5000);
+  }
+  render();
+  if (fresh) toast(`Đăng nhập thành công · Xin chào ${displayName()}! 👋`, 3500);
+  checkLocalData();
+}
+function leaveApp() {
+  user = null; records = []; clearCaches();
+  $('#migrateBox').hidden = true;
+  $('#aPass').value = '';
+  $('#aPass2').value = '';
+  resetOtpForm();
+  showScreen('auth');
+}
+
+/* ---------- old local data (before login existed) ---------- */
+let localRecs = [];
+function openLocalDB() {
+  return new Promise((res, rej) => {
+    const r = indexedDB.open('cham-cong', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('records', { keyPath: 'id' });
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+}
+const idbReq = r => new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+async function checkLocalData() {
+  try {
+    const db = await openLocalDB();
+    localRecs = await idbReq(db.transaction('records', 'readonly').objectStore('records').getAll());
+    $('#migrateCount').textContent = localRecs.length;
+    $('#migrateBox').hidden = !localRecs.length;
+  } catch (e) { $('#migrateBox').hidden = true; }
+}
+async function clearLocalData() {
+  const db = await openLocalDB();
+  await idbReq(db.transaction('records', 'readwrite').objectStore('records').clear());
+  localRecs = [];
+  $('#migrateBox').hidden = true;
+}
+$('#migrateGo').onclick = async () => {
+  const btn = $('#migrateGo'); btn.disabled = true;
+  let ok = 0;
+  try {
+    for (const old of localRecs) {
+      const rec = { id: uuid(), type: old.type, date: old.date, time: old.time, origDate: old.origDate, origTime: old.origTime,
+        source: old.source, note: old.note || '' };
+      if (old.photo) {
+        const type = old.photo.type || 'image/jpeg';
+        const path = `${user.id}/${old.date.slice(0, 7)}/${rec.id}.${PHOTO_EXT[type] || 'jpg'}`;
+        const { error } = await sb.storage.from(BUCKET).upload(path, old.photo, { contentType: type, upsert: true });
+        if (error) throw error;
+        rec.photoPath = path;
+      }
+      const { data, error } = await sb.from(TABLE).insert(toRow(rec)).select().single();
+      if (error) throw error;
+      records.push(fromRow(data));
+      toast(`Đang đưa lên ${++ok}/${localRecs.length}...`);
+    }
+    await clearLocalData();
+    toast(`Đã đưa ${ok} bản ghi lên tài khoản`);
+  } catch (err) {
+    toast(`Dừng ở ${ok}/${localRecs.length}: ${err.message || err}`, 5000);
+  } finally {
+    btn.disabled = false; render();
+  }
+};
+$('#migrateDrop').onclick = async () => {
+  if (!confirm('Xoá hẳn các bản ghi cũ trên máy này? Dữ liệu trên tài khoản không bị ảnh hưởng.')) return;
+  await clearLocalData();
+  toast('Đã xoá dữ liệu cũ trên máy');
+};
+
+/* ---------- background hearts & butterflies ---------- */
+function spawnFloaters() {
+  const items = ['💖', '💗', '💕', '💞', '🦋', '🦋', '🦋', '🌸'];
+  const rnd = (a, b) => a + Math.random() * (b - a);
+  let html = '';
+  for (let k = 0; k < 20; k++) {
+    const e = items[k % items.length];
+    const rise = rnd(14, 28).toFixed(1), sway = rnd(2.5, 5).toFixed(1);
+    html += `<i class="${e === '🦋' ? 'bf' : ''}" style="left:${rnd(0, 97).toFixed(1)}%;font-size:${rnd(14, 30).toFixed(0)}px;`
+      + `opacity:${rnd(.35, .75).toFixed(2)};animation-duration:${rise}s;animation-delay:-${rnd(0, rise).toFixed(1)}s">`
+      + `<b style="animation-duration:${sway}s"><s>${e}</s></b></i>`;
+  }
+  $('#fx').innerHTML = html;
+}
+
+/* ---------- init ---------- */
+(async () => {
+  spawnFloaters();
+  if (!window.supabase) { showSetup('Không tải được thư viện đăng nhập. Kiểm tra kết nối mạng rồi tải lại trang.'); return; }
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) { showSetup('Chưa kết nối Supabase: cần điền SUPABASE_URL và SUPABASE_ANON_KEY trong file index.html.'); return; }
+  sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  sb.auth.onAuthStateChange((event) => {
+    if (event === 'PASSWORD_RECOVERY') setTimeout(askNewPassword, 0);
+    if (event === 'SIGNED_OUT' && user) setTimeout(leaveApp, 0);
+  });
+  const hash = new URLSearchParams(location.hash.slice(1));
+  const fromEmailLink = hash.has('access_token');
+  const linkError = hash.get('error_description');
+  const { data: { session } } = await sb.auth.getSession();
+  if (fromEmailLink || linkError) history.replaceState(null, '', location.pathname + location.search);
+  if (session) await enterApp(session.user, fromEmailLink);
+  else {
+    showScreen('auth');
+    $('#fileWarn').hidden = location.protocol !== 'file:';
+    if (linkError) authMsg(/expired|invalid/i.test(linkError) ? 'Link đăng nhập đã hết hạn hoặc đã dùng rồi, gửi link mới nhé' : 'Lỗi: ' + linkError, 'bad');
+  }
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && user) render(); });
+})();
+</script>
+</body>
+</html>
