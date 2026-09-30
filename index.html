@@ -84,6 +84,7 @@ button:disabled{opacity:.6;cursor:progress}
 /* today */
 .punch{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
 .pbtn{border:1px solid var(--line);background:var(--offbg);border-radius:12px;padding:12px;display:grid;gap:2px;text-align:left}
+.pbtn:disabled,.link:disabled{opacity:.45;cursor:not-allowed}
 .pbtn .plabel{font-size:13px;font-weight:600;opacity:.85}
 .pbtn .ptime{font-size:24px;font-weight:700;line-height:1.2}
 .pbtn .ptime.empty{font-size:15px;font-weight:500;opacity:.7;line-height:1.9}
@@ -175,6 +176,9 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
 .preview{width:100%;max-height:260px;object-fit:contain;background:var(--offbg);border-radius:10px;cursor:zoom-in}
 .recs{display:grid;gap:8px}
 .rec{display:flex;gap:10px;align-items:center;border:1px solid var(--line);border-radius:10px;padding:8px;background:var(--card);text-align:left;width:100%}
+.rec.ro{cursor:zoom-in}
+.lock{background:var(--offbg);border-radius:10px;padding:10px 12px;font-size:13px;color:var(--muted)}
+input[readonly]{opacity:.75;cursor:not-allowed}
 .rec img,.rec .noimg{width:56px;height:56px;border-radius:8px;object-fit:cover;background:var(--offbg);flex:none;display:grid;place-items:center;font-size:11px;color:var(--muted)}
 .tag{display:inline-block;font-size:11px;padding:1px 6px;border-radius:6px;background:var(--offbg);color:var(--muted)}
 .tag.late{background:var(--warnbg);color:var(--warn)}
@@ -331,7 +335,7 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
     </div>
     <img class="preview" id="ePreview" alt="Ảnh chấm công" hidden>
     <div class="row">
-      <label class="f grow">Ngày<input type="date" id="eDate" required></label>
+      <label class="f grow">Ngày<input type="date" id="eDate" required readonly></label>
       <label class="f grow">Giờ<input type="time" id="eTime" required></label>
     </div>
     <small class="muted" id="eSource"></small>
@@ -350,8 +354,12 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
     <h2 id="dTitle"></h2>
     <div id="dInfo" class="muted"></div>
     <div class="recs" id="dRecs"></div>
+    <div class="punch" id="dAdd" style="margin:0">
+      <button class="btn" id="dIn">📷 Ảnh giờ vào</button>
+      <button class="btn" id="dOut">📷 Ảnh giờ ra</button>
+    </div>
+    <div class="lock" id="dLock" hidden></div>
     <div class="row">
-      <button class="btn" id="dGallery">+ Thêm ảnh</button>
       <span class="grow"></span>
       <button class="btn primary" id="dClose">Đóng</button>
     </div>
@@ -542,7 +550,7 @@ function render() { renderToday(); renderMonth(); }
 /** Record whose photo represents the punch that counts (first in / last out). */
 function punchRec(info, type, minute) {
   if (minute == null) return null;
-  const withPhoto = info.recs.filter(r => r.type === type && r.photoPath);
+  const withPhoto = info.recs.filter(r => r.type === type && (r.photoPath || r.photoBlob));
   return withPhoto.find(r => toMin(r.time) === minute) || withPhoto[withPhoto.length - 1] || null;
 }
 async function setThumb(sel, rec) {
@@ -575,6 +583,7 @@ function renderToday() {
   }
   $('#todayBadge').innerHTML = badge;
   const office = info.mode === 'office';
+  ['#btnIn', '#btnOut', '#btnGallery'].forEach(s => { $(s).disabled = !office; });
   $('#btnIn').classList.toggle('primary', office && info.firstIn == null);
   $('#btnOut').classList.toggle('primary', office && info.firstIn != null);
   setThumb('#imgIn', punchRec(info, 'in', info.firstIn));
@@ -712,6 +721,7 @@ $('#entryForm').addEventListener('submit', async e => {
   e.preventDefault();
   const date = $('#eDate').value, time = $('#eTime').value;
   if (!date || !time) { toast('Nhập ngày và giờ nhé'); return; }
+  if (!canPunch(date)) { toast('🔒 ' + lockReason(date), 4000); return; }
   const isNew = !records.some(x => x.id === editing.id);
   const rec = {
     ...editing, id: editing.id || uuid(), date, time,
@@ -746,6 +756,7 @@ $('#entryForm').addEventListener('submit', async e => {
 });
 $('#eCancel').onclick = () => $('#entrySheet').close();
 $('#eDelete').onclick = async () => {
+  if (!canPunch(editing.date)) { toast('🔒 ' + lockReason(editing.date), 4000); return; }
   if (!confirm('Xoá bản ghi này?')) return;
   const { error } = await sb.from(TABLE).delete().eq('id', editing.id);
   if (error) { toast('Xoá thất bại: ' + error.message, 4000); return; }
@@ -757,15 +768,28 @@ $('#eDelete').onclick = async () => {
 };
 $('#ePreview').onclick = e => showPhoto(e.target.src);
 
-/* ---------- capture ---------- */
-let pending = { fixedType: 'in', date: null };
+/* ---------- capture (only today, only office days) ---------- */
+const canPunch = ds => ds === todayStr() && dayMode(ds) === 'office';
+function lockReason(ds) {
+  const mode = dayMode(ds), t = todayStr();
+  if (mode === 'online') return 'Ngày làm online, không cần chấm công';
+  if (isRestMode(mode)) return 'Ngày nghỉ, không cần chấm công';
+  if (ds < t) return 'Ngày đã qua. Chỉ được đẩy ảnh chấm công trong ngày hôm nay';
+  if (ds > t) return 'Chưa đến ngày này';
+  return '';
+}
+const dmy = ds => ds.split('-').reverse().join('/');
+
+let pending = { fixedType: 'in' };
 async function handleFile(file) {
   if (!file) return;
   toast('Đang xử lý ảnh...');
   const exif = await readExifDate(file);
   const now = new Date();
-  const date = exif ? ymd(exif) : (pending.date || ymd(now));
+  const date = exif ? ymd(exif) : ymd(now);
   const time = exif ? hm(exif) : hm(now);
+  if (date !== todayStr()) { toast(`🔒 Ảnh này chụp ngày ${dmy(date)}. Chỉ được đẩy ảnh chụp trong hôm nay.`, 4500); return; }
+  if (!canPunch(date)) { toast('🔒 ' + lockReason(date), 4000); return; }
   const photoBlob = await compress(file);
   const type = pending.fixedType || nextType(date);
   openEntry({ type, date, time, origDate: date, origTime: time, photoBlob, source: exif ? 'exif' : 'upload' });
@@ -773,11 +797,11 @@ async function handleFile(file) {
 $('#camIn').onchange = e => handleFile(e.target.files[0]);
 $('#galIn').onchange = e => handleFile(e.target.files[0]);
 
-function capture(type) { pending = { fixedType: type, date: null }; $('#camIn').value = ''; $('#camIn').click(); }
-function pickGallery(date) { pending = { fixedType: null, date }; $('#galIn').value = ''; $('#galIn').click(); }
+function capture(type) { pending = { fixedType: type }; $('#camIn').value = ''; $('#camIn').click(); }
+function pickGallery(type = null) { pending = { fixedType: type }; $('#galIn').value = ''; $('#galIn').click(); }
 $('#btnIn').onclick = () => capture('in');
 $('#btnOut').onclick = () => capture('out');
-$('#btnGallery').onclick = () => pickGallery(null);
+$('#btnGallery').onclick = () => pickGallery();
 $('#imgIn').onclick = e => showPhoto(e.target.src);
 $('#imgOut').onclick = e => showPhoto(e.target.src);
 
@@ -792,10 +816,14 @@ function renderDay() {
   if (info.late) parts.push(`đi muộn ${info.late} phút`);
   if (info.early) parts.push(`về sớm ${info.early} phút`);
   $('#dInfo').textContent = parts.join(' · ') || 'Chưa có bản ghi';
+  const locked = !canPunch(dayOpen);
+  $('#dAdd').hidden = locked;
+  $('#dLock').hidden = !locked;
+  $('#dLock').textContent = locked ? `🔒 ${lockReason(dayOpen)}${info.recs.length ? ' · bản ghi chỉ xem, không sửa/xoá được' : ''}` : '';
   $('#dRecs').innerHTML = info.recs.map(r => {
     const img = r.photoPath ? `<img data-id="${r.id}" alt="">` : '<div class="noimg">không ảnh</div>';
     const src = r.source === 'exif' ? 'giờ theo ảnh' : r.source === 'manual' ? 'nhập tay' : 'giờ tải lên';
-    return `<button class="rec" data-id="${r.id}">${img}<div class="grow"><b>${TYPE_LABEL[r.type]} ${r.time}</b><br>
+    return `<button class="rec${locked ? ' ro' : ''}" data-id="${r.id}">${img}<div class="grow"><b>${TYPE_LABEL[r.type]} ${r.time}</b><br>
       <small class="muted">${src}${r.origTime && r.origTime !== r.time ? ' · đã sửa' : ''}${r.note ? ' · ' + esc(r.note) : ''}</small></div></button>`;
   }).join('');
   for (const el of document.querySelectorAll('#dRecs img[data-id]')) {
@@ -805,9 +833,12 @@ function renderDay() {
 }
 $('#dRecs').onclick = e => {
   const b = e.target.closest('.rec'); if (!b) return;
-  const r = records.find(x => x.id === b.dataset.id); if (r) openEntry(r);
+  const r = records.find(x => x.id === b.dataset.id); if (!r) return;
+  if (canPunch(r.date)) openEntry(r);
+  else if (r.photoPath) photoUrl(r).then(showPhoto);
 };
-$('#dGallery').onclick = () => pickGallery(dayOpen);
+$('#dIn').onclick = () => pickGallery('in');
+$('#dOut').onclick = () => pickGallery('out');
 $('#dClose').onclick = () => $('#daySheet').close();
 $('#cal').onclick = e => { const b = e.target.closest('.day'); if (b) openDay(b.dataset.d); };
 
@@ -920,8 +951,8 @@ function addTitle(ws, lastCol, title, lines) {
   });
 }
 
-/** Image box inside the "Ảnh" column: column width in Excel chars, box size in px. */
-const XL_IMG = { colChars: 26, colPx: 26 * 7 + 5, w: 170, h: 128, pad: 5 };
+/** Image box inside the "Ảnh vào/ra" columns: column width in Excel chars, box size in px. */
+const XL_IMG = { colChars: 22, colPx: 22 * 7 + 5, w: 144, h: 108, pad: 5 };
 
 async function blobToBase64Url(blob) {
   const bytes = new Uint8Array(await blob.arrayBuffer());
@@ -942,7 +973,8 @@ async function excelThumb(blob, max = 520) {
     return { url: await blobToBase64Url(blob), w: 4, h: 3 };
   }
 }
-async function addPhotoToCell(wb, ws, blob, rowNo) {
+/** Embed a photo centred in the cell at (rowNo, 0-based colIndex) and make the row tall enough. */
+async function addPhotoToCell(wb, ws, blob, rowNo, colIndex) {
   const t = await excelThumb(blob);
   const ext = /^data:image\/png/.test(t.url) ? 'png' : /^data:image\/jpe?g/.test(t.url) ? 'jpeg' : null;
   if (!ext) return false;
@@ -952,7 +984,7 @@ async function addPhotoToCell(wb, ws, blob, rowNo) {
   ws.getRow(rowNo).height = rowPx * 0.75;
   const id = wb.addImage({ base64: t.url, extension: ext });
   ws.addImage(id, {
-    tl: { col: 6 + (XL_IMG.colPx - w) / 2 / XL_IMG.colPx, row: rowNo - 1 + (rowPx - h) / 2 / rowPx },
+    tl: { col: colIndex + (XL_IMG.colPx - w) / 2 / XL_IMG.colPx, row: rowNo - 1 + (rowPx - h) / 2 / rowPx },
     ext: { width: w, height: h },
     editAs: 'oneCell',
   });
@@ -972,33 +1004,48 @@ async function exportExcel() {
   const wb = new ExcelJS.Workbook();
   wb.creator = `${displayName()} <${user.email}>`;
 
-  /* Sheet 1: bảng công theo ngày */
+  /* Bảng công theo ngày, kèm ảnh vào/ra ngay trên từng dòng */
+  const COLS = 11;
   const ws = wb.addWorksheet(`Tháng ${m + 1}-${y}`, {
     views: [{ state: 'frozen', ySplit: 4 }],
-    pageSetup: { paperSize: 9, orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
+    pageSetup: { paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
   });
-  ws.columns = [{ width: 13 }, { width: 8 }, { width: 10 }, { width: 10 }, { width: 12 }, { width: 12 }, { width: 8 }, { width: 15 }, { width: 36 }];
-  addTitle(ws, 'I', `BẢNG CHẤM CÔNG THÁNG ${m + 1}/${y}`, [who,
-    `Giờ quy định ${S.start} – ${S.end}  ·  Mất chuyên cần khi muộn + sớm ≥ ${S.limit} phút/tháng  ·  Xuất ngày ${exportedAt}  ·  Ảnh chấm công xem ở sheet “Chi tiết & ảnh”`]);
-  ws.getRow(4).values = ['Ngày', 'Thứ', 'Giờ vào', 'Giờ ra', 'Đi muộn (phút)', 'Về sớm (phút)', 'Công', 'Trạng thái', 'Ghi chú'];
+  ws.columns = [{ width: 13 }, { width: 8 }, { width: 10 }, { width: 10 }, { width: 12 }, { width: 12 }, { width: 8 }, { width: 15 }, { width: 30 },
+    { width: XL_IMG.colChars }, { width: XL_IMG.colChars }];
+  addTitle(ws, 'K', `BẢNG CHẤM CÔNG THÁNG ${m + 1}/${y}`, [who,
+    `Giờ quy định ${S.start} – ${S.end}  ·  Mất chuyên cần khi muộn + sớm ≥ ${S.limit} phút/tháng  ·  Xuất ngày ${exportedAt}`]);
+  ws.getRow(4).values = ['Ngày', 'Thứ', 'Giờ vào', 'Giờ ra', 'Đi muộn (phút)', 'Về sớm (phút)', 'Công', 'Trạng thái', 'Ghi chú', 'Ảnh vào', 'Ảnh ra'];
   styleHeader(ws.getRow(4));
 
   const first = 5;
-  let r = first;
+  let r = first, photosDone = 0;
   for (const d of s.days) {
     const row = ws.getRow(r);
+    const notes = d.recs.map(x => x.note).filter(Boolean);
+    for (const x of d.recs) if (x.origTime && x.origTime !== x.time) notes.push(`Giờ ${TYPE_LABEL[x.type].toLowerCase()} đã sửa (gốc ${x.origTime})`);
     row.values = [
       xDate(d.ds), WD_SHORT[new Date(d.ds + 'T00:00').getDay()],
       d.firstIn != null ? d.firstIn / 1440 : null, d.lastOut != null ? d.lastOut / 1440 : null,
-      d.late || null, d.early || null, d.cong || null, STATUS_LABEL[d.status],
-      d.recs.map(x => x.note).filter(Boolean).join('; '),
+      d.late || null, d.early || null, d.cong || null, STATUS_LABEL[d.status], notes.join('; '), '', '',
     ];
     const [bg, fg] = XL.status[d.status];
-    for (let c = 1; c <= 9; c++) {
+    for (let c = 1; c <= COLS; c++) {
       const cell = row.getCell(c);
       cell.border = xBox;
       cell.alignment = { vertical: 'middle', horizontal: c === 9 ? 'left' : 'center', wrapText: c === 9 };
       if (d.status === 'off') { cell.fill = xFill(XL.status.off[0]); cell.font = { color: { argb: XL.status.off[1] } }; }
+    }
+    for (const [type, minute, colIndex] of [['in', d.firstIn, 9], ['out', d.lastOut, 10]]) {
+      if (minute == null) continue;
+      const rec = punchRec(d, type, minute);
+      const blob = rec ? await getPhoto(rec) : null;
+      if (blob && (await addPhotoToCell(wb, ws, blob, r, colIndex))) {
+        toast(`Đang chèn ảnh ${++photosDone}...`);
+      } else {
+        const cell = row.getCell(colIndex + 1);
+        cell.value = 'Không có ảnh';
+        cell.font = { italic: true, color: { argb: XL.muted } };
+      }
     }
     row.getCell(1).numFmt = 'dd/mm/yyyy';
     row.getCell(3).numFmt = 'hh:mm';
@@ -1022,7 +1069,7 @@ async function exportExcel() {
   tot.getCell(5).value = { formula: `SUM(E${first}:E${last})`, result: s.late };
   tot.getCell(6).value = { formula: `SUM(F${first}:F${last})`, result: s.early };
   tot.getCell(7).value = { formula: `SUM(G${first}:G${last})`, result: s.cong };
-  for (let c = 1; c <= 9; c++) {
+  for (let c = 1; c <= COLS; c++) {
     const cell = tot.getCell(c);
     cell.font = { bold: true };
     cell.fill = xFill(XL.total);
@@ -1068,41 +1115,6 @@ async function exportExcel() {
     }
     r++;
   }
-
-  /* Sheet 2: chi tiết từng lần chấm, kèm ảnh */
-  const wd = wb.addWorksheet('Chi tiết & ảnh', { views: [{ state: 'frozen', ySplit: 4 }] });
-  wd.columns = [{ width: 13 }, { width: 8 }, { width: 8 }, { width: 10 }, { width: 24 }, { width: 30 }, { width: XL_IMG.colChars }];
-  addTitle(wd, 'G', `CHI TIẾT LẦN CHẤM CÔNG THÁNG ${m + 1}/${y}`, [who,
-    `Mỗi dòng là một lần chấm kèm ảnh chụp máy chấm công  ·  Xuất ngày ${exportedAt}`]);
-  wd.getRow(4).values = ['Ngày', 'Thứ', 'Loại', 'Giờ', 'Nguồn giờ', 'Ghi chú', 'Ảnh chấm công'];
-  styleHeader(wd.getRow(4));
-  const prefix = `${y}-${pad(m + 1)}-`;
-  const monthRecs = records.filter(x => x.date.startsWith(prefix))
-    .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
-  const srcText = x => (x.source === 'exif' ? 'Theo giờ chụp ảnh' : x.source === 'manual' ? 'Nhập tay' : 'Giờ tải lên')
-    + (x.origTime && x.origTime !== x.time ? ` (đã sửa, gốc ${x.origTime})` : '');
-  let dr = 5, done = 0;
-  const withPhotos = monthRecs.filter(x => x.photoPath || x.photoBlob).length;
-  for (const x of monthRecs) {
-    const blob = await getPhoto(x);
-    const row = wd.getRow(dr);
-    row.values = [xDate(x.date), WD_SHORT[new Date(x.date + 'T00:00').getDay()], TYPE_LABEL[x.type],
-      toMin(x.time) / 1440, srcText(x), x.note || '', blob ? '' : 'Không có ảnh'];
-    for (let c = 1; c <= 7; c++) {
-      const cell = row.getCell(c);
-      cell.border = xBox;
-      cell.alignment = { vertical: 'middle', horizontal: c === 5 || c === 6 ? 'left' : 'center', wrapText: c === 5 || c === 6 };
-    }
-    row.getCell(1).numFmt = 'dd/mm/yyyy';
-    row.getCell(4).numFmt = 'hh:mm';
-    row.getCell(3).font = { bold: true, color: { argb: x.type === 'in' ? 'FF15803D' : 'FF1D4ED8' } };
-    row.getCell(7).font = { italic: true, color: { argb: XL.muted } };
-    if (blob && (await addPhotoToCell(wb, wd, blob, dr))) {
-      toast(`Đang chèn ảnh ${++done}/${withPhotos}...`);
-    }
-    dr++;
-  }
-  if (monthRecs.length) wd.autoFilter = { from: 'A4', to: `G${dr - 1}` };
 
   const buf = await wb.xlsx.writeBuffer();
   download(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
