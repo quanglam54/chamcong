@@ -976,7 +976,11 @@ function addTitle(ws, lastCol, title, lines) {
 }
 
 /** Image box inside the "Ảnh vào/ra" columns: column width in Excel chars, box size in px. */
-const XL_IMG = { colChars: 22, colPx: 22 * 7 + 5, w: 144, h: 108, pad: 5 };
+const XL_IMG = { colChars: 22, colPx: 22 * 7 + 5, w: 144, h: 108, pad: 5, link: 18 };
+/** Sheet of full-size photos the "Xem ảnh lớn" links jump to: one title row + one image row per photo. */
+const XL_BIG = { sheet: 'Ảnh chấm công', colChars: 92, colPx: 92 * 7 + 5, w: 640, h: 480, pad: 8, first: 3 };
+const xLink = (sheet, cell, text) => ({ formula: `HYPERLINK("#'${sheet}'!${cell}","${text}")`, result: text });
+const xLinkFont = { color: { argb: 'FF2563EB' }, underline: true };
 
 async function blobToBase64Url(blob) {
   const bytes = new Uint8Array(await blob.arrayBuffer());
@@ -997,21 +1001,28 @@ async function excelThumb(blob, max = 520) {
     return { url: await blobToBase64Url(blob), w: 4, h: 3 };
   }
 }
-/** Embed a photo centred in the cell at (rowNo, 0-based colIndex) and make the row tall enough. */
-async function addPhotoToCell(wb, ws, blob, rowNo, colIndex) {
-  const t = await excelThumb(blob);
+/** Embed a photo in the cell at (rowNo, 0-based colIndex) and make the row tall enough.
+ *  `box` sets the image area; `link` (optional) is a cell value shown in a strip under the image. */
+async function addPhotoToCell(wb, ws, blob, rowNo, colIndex, { box = XL_IMG, max = 520, link = null } = {}) {
+  const t = await excelThumb(blob, max);
   const ext = /^data:image\/png/.test(t.url) ? 'png' : /^data:image\/jpe?g/.test(t.url) ? 'jpeg' : null;
   if (!ext) return false;
-  const k = Math.min(XL_IMG.w / t.w, XL_IMG.h / t.h);
+  const k = Math.min(box.w / t.w, box.h / t.h);
   const w = Math.round(t.w * k), h = Math.round(t.h * k);
-  const rowPx = XL_IMG.h + XL_IMG.pad * 2;
+  const rowPx = box.h + box.pad * 2 + (link ? XL_IMG.link : 0);
   ws.getRow(rowNo).height = rowPx * 0.75;
   const id = wb.addImage({ base64: t.url, extension: ext });
   ws.addImage(id, {
-    tl: { col: colIndex + (XL_IMG.colPx - w) / 2 / XL_IMG.colPx, row: rowNo - 1 + (rowPx - h) / 2 / rowPx },
+    tl: { col: colIndex + (box.colPx - w) / 2 / box.colPx, row: rowNo - 1 + (box.pad + (box.h - h) / 2) / rowPx },
     ext: { width: w, height: h },
     editAs: 'oneCell',
   });
+  if (link) {
+    const cell = ws.getRow(rowNo).getCell(colIndex + 1);
+    cell.value = link;
+    cell.font = xLinkFont;
+    cell.alignment = { vertical: 'bottom', horizontal: 'center' };
+  }
   return true;
 }
 
@@ -1043,6 +1054,7 @@ async function exportExcel() {
 
   const first = 5;
   let r = first, photosDone = 0;
+  const bigs = []; // ảnh lớn cho sheet "Ảnh chấm công", theo đúng thứ tự link
   for (const d of s.days) {
     const row = ws.getRow(r);
     const notes = d.recs.map(x => x.note).filter(Boolean);
@@ -1063,7 +1075,9 @@ async function exportExcel() {
       if (minute == null) continue;
       const rec = punchRec(d, type, minute);
       const blob = rec ? await getPhoto(rec) : null;
-      if (blob && (await addPhotoToCell(wb, ws, blob, r, colIndex))) {
+      const bigRow = XL_BIG.first + bigs.length * 2;
+      if (blob && (await addPhotoToCell(wb, ws, blob, r, colIndex, { link: xLink(XL_BIG.sheet, `A${bigRow}`, '🔍 Xem ảnh lớn') }))) {
+        bigs.push({ blob, backRow: r, label: `${WD_SHORT[new Date(d.ds + 'T00:00').getDay()]}, ${dmy(d.ds)}  ·  ${TYPE_LABEL[type]} ${rec.time}` });
         toast(`Đang chèn ảnh ${++photosDone}...`);
       } else {
         const cell = row.getCell(colIndex + 1);
@@ -1138,6 +1152,33 @@ async function exportExcel() {
       vc.font = { bold: true, size: 13, color: { argb: XL.status.progress[1] } };
     }
     r++;
+  }
+
+  /* Sheet ảnh lớn: bấm "Xem ảnh lớn" ở bảng công để nhảy tới, bấm "Về bảng công" để quay lại */
+  if (bigs.length) {
+    const ps = wb.addWorksheet(XL_BIG.sheet);
+    ps.columns = [{ width: XL_BIG.colChars }, { width: 18 }];
+    ps.mergeCells('A1:B1');
+    const h = ps.getCell('A1');
+    h.value = `ẢNH CHẤM CÔNG THÁNG ${m + 1}/${y}  ·  ${displayName()}`;
+    h.font = { bold: true, size: 14, color: { argb: 'FFFFFFFF' } };
+    h.fill = xFill(XL.title);
+    h.alignment = { vertical: 'middle', horizontal: 'center' };
+    ps.getRow(1).height = 28;
+    for (const [i, b] of bigs.entries()) {
+      const tr = XL_BIG.first + i * 2;
+      const title = ps.getRow(tr);
+      title.height = 22;
+      title.getCell(1).value = b.label;
+      title.getCell(1).font = { bold: true, size: 12 };
+      title.getCell(1).alignment = { vertical: 'middle', indent: 1 };
+      title.getCell(1).fill = xFill('FFF9FAFB');
+      title.getCell(2).value = xLink(ws.name, `A${b.backRow}`, '← Về bảng công');
+      title.getCell(2).font = xLinkFont;
+      title.getCell(2).alignment = { vertical: 'middle', horizontal: 'center' };
+      await addPhotoToCell(wb, ps, b.blob, tr + 1, 0, { box: XL_BIG, max: 1280 });
+      toast(`Đang chèn ảnh lớn ${i + 1}/${bigs.length}...`);
+    }
   }
 
   const buf = await wb.xlsx.writeBuffer();
