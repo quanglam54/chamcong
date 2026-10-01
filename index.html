@@ -305,6 +305,7 @@ input[readonly]{opacity:.75;cursor:not-allowed}
 
 <input type="file" id="camIn" accept="image/*" capture="environment" hidden>
 <input type="file" id="galIn" accept="image/*" hidden>
+<input type="file" id="repIn" accept="image/*" hidden>
 
 <dialog id="settingsSheet">
   <div class="sheet">
@@ -334,6 +335,7 @@ input[readonly]{opacity:.75;cursor:not-allowed}
       <label><input type="radio" name="eType" value="out">Ra</label>
     </div>
     <img class="preview" id="ePreview" alt="Ảnh chấm công" hidden>
+    <button type="button" class="link" id="eReplace">🔄 Thay ảnh</button>
     <div class="row">
       <label class="f grow">Ngày<input type="date" id="eDate" required readonly></label>
       <label class="f grow">Giờ<input type="time" id="eTime" required></label>
@@ -710,6 +712,7 @@ function openEntry(rec) {
   } else if (rec.photoPath) {
     photoUrl(rec).then(u => { if (u && tok === previewToken) { img.src = u; img.hidden = false; } });
   }
+  $('#eReplace').textContent = rec.photoBlob || rec.photoPath ? '🔄 Thay ảnh (giữ nguyên giờ)' : '📷 Thêm ảnh';
   $('#eDelete').hidden = !isExisting;
   $('#entrySheet').showModal();
 }
@@ -731,9 +734,11 @@ $('#entryForm').addEventListener('submit', async e => {
   const btn = $('#eSave');
   btn.disabled = true; btn.textContent = 'Đang lưu...';
   try {
-    if (isNew && rec.photoBlob) {
+    const oldPath = !isNew && rec.photoReplaced ? rec.photoPath : null;
+    if ((isNew || rec.photoReplaced) && rec.photoBlob) {
       const type = rec.photoBlob.type || 'image/jpeg';
-      const path = `${user.id}/${date.slice(0, 7)}/${rec.id}.${PHOTO_EXT[type] || 'jpg'}`;
+      // Ảnh thay thế lưu ở đường dẫn mới để không dính ảnh cũ trong cache
+      const path = `${user.id}/${date.slice(0, 7)}/${rec.id}${isNew ? '' : '-' + Date.now()}.${PHOTO_EXT[type] || 'jpg'}`;
       const { error } = await sb.storage.from(BUCKET).upload(path, rec.photoBlob, { contentType: type, upsert: true });
       if (error) throw error;
       rec.photoPath = path;
@@ -743,6 +748,7 @@ $('#entryForm').addEventListener('submit', async e => {
     const { data, error } = await q.select().single();
     if (error) throw error;
     const saved = fromRow(data);
+    if (oldPath && oldPath !== saved.photoPath) sb.storage.from(BUCKET).remove([oldPath]).catch(() => {});
     records = records.filter(x => x.id !== saved.id).concat(saved);
     $('#entrySheet').close();
     toast(`Đã lưu: ${TYPE_LABEL[saved.type]} ${saved.time}`);
@@ -767,6 +773,24 @@ $('#eDelete').onclick = async () => {
   if ($('#daySheet').open) renderDay();
 };
 $('#ePreview').onclick = e => showPhoto(e.target.src);
+
+/* Thay ảnh: chỉ đổi ảnh, giữ nguyên ngày/giờ/nguồn giờ của bản ghi */
+$('#eReplace').onclick = () => { $('#repIn').value = ''; $('#repIn').click(); };
+$('#repIn').onchange = async e => {
+  const file = e.target.files[0];
+  if (!file || !editing) return;
+  toast('Đang xử lý ảnh...');
+  const blob = await compress(file);
+  if (editing.previewUrl) URL.revokeObjectURL(editing.previewUrl);
+  editing.photoBlob = blob;
+  editing.photoReplaced = true;
+  editing.previewUrl = URL.createObjectURL(blob);
+  previewToken++;
+  const img = $('#ePreview');
+  img.src = editing.previewUrl; img.hidden = false;
+  $('#eReplace').textContent = '🔄 Thay ảnh (giữ nguyên giờ)';
+  toast('Đã chọn ảnh mới, bấm Lưu để cập nhật');
+};
 
 /* ---------- capture (only today, only office days) ---------- */
 const canPunch = ds => ds === todayStr() && dayMode(ds) === 'office';
